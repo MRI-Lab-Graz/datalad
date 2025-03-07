@@ -67,18 +67,21 @@ compare_files() {
     local src_dir=$1
     local datalad_dir=$2
     local failed=0
+    local temp_file=$(mktemp)
 
     log_info "🔍 Comparing files in $src_dir and $datalad_dir..."
 
     # Find all files in the source directory
-    find "$src_dir" -type f | while read -r src_file; do
+    find "$src_dir" -type f > "$temp_file"
+    
+    while read -r src_file; do
         # Construct the corresponding file path in the DataLad dataset
         datalad_file="${src_file/$src_dir/$datalad_dir}"
 
         # Check if the file exists in the DataLad dataset
         if [[ ! -f "$datalad_file" ]]; then
             log_error "❌ File missing in DataLad dataset: $datalad_file"
-            ((failed++))
+            failed=$((failed+1))
             continue
         fi
 
@@ -91,9 +94,12 @@ compare_files() {
             log_error "❌ Hash mismatch for file: $src_file"
             log_error "   Source hash: $src_hash"
             log_error "   DataLad hash: $datalad_hash"
-            ((failed++))
+            failed=$((failed+1))
         fi
-    done
+    done < "$temp_file"
+
+    # Clean up
+    rm "$temp_file"
 
     # Check if any files failed the comparison
     if [[ $failed -eq 0 ]]; then
