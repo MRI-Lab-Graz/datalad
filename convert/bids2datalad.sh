@@ -130,7 +130,9 @@ usage() {
 # Initialize variables
 skip_bids_validation=false
 src_dir=""
+dest_root=""
 dest_dir=""
+
 
 # Parse options
 while [[ "$1" == -* ]]; do
@@ -144,7 +146,7 @@ while [[ "$1" == -* ]]; do
             ;;
         -d)
             shift
-            dest_dir="$1"
+            dest_root="$1"
             ;;
         --skip_bids_validation)
             skip_bids_validation=true
@@ -157,9 +159,14 @@ while [[ "$1" == -* ]]; do
 done
 
 # Check for required arguments
-if [[ -z "$src_dir" || -z "$dest_dir" ]]; then
+if [[ -z "$src_dir" || -z "$dest_root" ]]; then
     usage
 fi
+
+study_name=$(basename "$(dirname "$src_dir")")
+
+dest_dir="$dest_root/$study_name/rawdata"
+
 
 # Convert relative paths to absolute paths
 src_dir=$(cd "$src_dir"; pwd)
