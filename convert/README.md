@@ -37,3 +37,7 @@ Files are organized hierarchically to match the BIDS structure (e.g., sub-01/ana
 Versioning:
 
 All files are tracked and versioned by DataLad, ensuring that the dataset history is preserved.
+
+# Add Container
+
+datalad containers-add mriqc --url /data/local/container/mriqc/mriqc_25.0.0rc0.sif 
