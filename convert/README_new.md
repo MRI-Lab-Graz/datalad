@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/yourusername/bids2datalad)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#required-dependencies)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#prerequisites)
 
 A robust and feature-rich script for converting BIDS-formatted MRI datasets into DataLad superdatasets with subject-level subdatasets. This tool ensures data integrity through comprehensive validation and verification processes.
 
@@ -332,8 +332,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/bids2datalad/issues)
 - 💡 **Feature Requests:** [Start a discussion](https://github.com/yourusername/bids2datalad/discussions)
-- 📧 **Email:** [your.email@institution.edu](mailto:your.email@institution.edu)
+- 📧 **Email:** your.email@institution.edu
 
 ---
 
-Made with ❤️ by the MRI Lab Graz
+**Made with ❤️ by the MRI Lab Graz**

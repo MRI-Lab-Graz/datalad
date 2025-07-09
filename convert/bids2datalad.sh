@@ -59,7 +59,14 @@ validate_bids() {
 # Function to compute SHA-256 hash of a file
 compute_hash() {
     local file=$1
-    sha256sum "$file" | awk '{print $1}'
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum &> /dev/null; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        log_error "❌ No SHA-256 hash tool available (sha256sum or shasum)"
+        exit 1
+    fi
 }
 
 # Function to compare files in the source and DataLad dataset
@@ -73,30 +80,98 @@ compare_files() {
 
     # Find all files in the source directory
     find "$src_dir" -type f > "$temp_file"
+    local total_files=$(wc -l < "$temp_file")
+    local current_file=0
     
-    while read -r src_file; do
-        # Construct the corresponding file path in the DataLad dataset
-        datalad_file="${src_file/$src_dir/$datalad_dir}"
-
-        # Check if the file exists in the DataLad dataset
-        if [[ ! -f "$datalad_file" ]]; then
-            log_error "❌ File missing in DataLad dataset: $datalad_file"
-            failed=$((failed+1))
-            continue
+    if [[ "$dry_run" == true ]]; then
+        log_info "🧪 DRY RUN: Would compare $total_files files"
+        rm "$temp_file"
+        return 0
+    fi
+    
+    if [[ "$parallel_hash" == true ]] && command -v xargs &> /dev/null; then
+        log_info "🚀 Using parallel hash calculation for better performance"
+        
+        # Function for parallel processing
+        compare_single_file() {
+            local src_file=$1
+            local src_dir=$2
+            local datalad_dir=$3
+            
+            local datalad_file="${src_file/$src_dir/$datalad_dir}"
+            
+            if [[ ! -f "$datalad_file" ]]; then
+                echo "MISSING:$datalad_file"
+                return 1
+            fi
+            
+            local src_hash=$(compute_hash "$src_file")
+            local datalad_hash=$(compute_hash "$datalad_file")
+            
+            if [[ "$src_hash" != "$datalad_hash" ]]; then
+                echo "MISMATCH:$src_file:$src_hash:$datalad_hash"
+                return 1
+            fi
+            
+            return 0
+        }
+        
+        export -f compare_single_file
+        export -f compute_hash
+        
+        # Use xargs for parallel processing
+        if parallel_results=$(cat "$temp_file" | xargs -I {} -P 4 bash -c 'compare_single_file "{}" "'$src_dir'" "'$datalad_dir'"' 2>&1); then
+            log_info "✅ All files are identical in the source and DataLad dataset!"
+        else
+            echo "$parallel_results" | while read -r line; do
+                if [[ "$line" == MISSING:* ]]; then
+                    log_error "❌ File missing in DataLad dataset: ${line#MISSING:}"
+                    failed=$((failed+1))
+                elif [[ "$line" == MISMATCH:* ]]; then
+                    IFS=':' read -r _ file src_hash datalad_hash <<< "$line"
+                    log_error "❌ Hash mismatch for file: $file"
+                    log_error "   Source hash: $src_hash"
+                    log_error "   DataLad hash: $datalad_hash"
+                    failed=$((failed+1))
+                fi
+            done
         fi
+    else
+        # Sequential processing (original method)
+        while read -r src_file; do
+            current_file=$((current_file + 1))
+            
+            # Show progress every 10 files or for small datasets
+            if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
+                show_progress $current_file $total_files
+            fi
+            
+            # Construct the corresponding file path in the DataLad dataset
+            datalad_file="${src_file/$src_dir/$datalad_dir}"
 
-        # Compute hashes
-        src_hash=$(compute_hash "$src_file")
-        datalad_hash=$(compute_hash "$datalad_file")
+            # Check if the file exists in the DataLad dataset
+            if [[ ! -f "$datalad_file" ]]; then
+                log_error "❌ File missing in DataLad dataset: $datalad_file"
+                failed=$((failed+1))
+                continue
+            fi
 
-        # Compare hashes
-        if [[ "$src_hash" != "$datalad_hash" ]]; then
-            log_error "❌ Hash mismatch for file: $src_file"
-            log_error "   Source hash: $src_hash"
-            log_error "   DataLad hash: $datalad_hash"
-            failed=$((failed+1))
-        fi
-    done < "$temp_file"
+            # Compute hashes
+            src_hash=$(compute_hash "$src_file")
+            datalad_hash=$(compute_hash "$datalad_file")
+
+            # Compare hashes
+            if [[ "$src_hash" != "$datalad_hash" ]]; then
+                log_error "❌ Hash mismatch for file: $src_file"
+                log_error "   Source hash: $src_hash"
+                log_error "   DataLad hash: $datalad_hash"
+                failed=$((failed+1))
+            fi
+        done < "$temp_file"
+        
+        # Clear progress line
+        echo ""
+    fi
 
     # Clean up
     rm "$temp_file"
@@ -111,24 +186,135 @@ compare_files() {
     return $failed  # Return the number of failed comparisons
 }
 
+# Function to check if required dependencies are available
+check_dependencies() {
+    local missing_deps=()
+    
+    # Check for required commands
+    local required_commands=("deno" "datalad" "rsync" "find" "awk")
+    
+    for cmd in "${required_commands[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+    
+    # Check for SHA hash tools (either sha256sum or shasum should be available)
+    if ! command -v sha256sum &> /dev/null && ! command -v shasum &> /dev/null; then
+        missing_deps+=("sha256sum or shasum")
+    fi
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        log_error "❌ Missing required dependencies: ${missing_deps[*]}"
+        log_error "Please install the missing dependencies and try again."
+        exit 1
+    fi
+    
+    log_info "✅ All required dependencies are available."
+}
+
+# Function to validate arguments and paths
+validate_arguments() {
+    # Check that source directory path doesn't contain problematic characters
+    if [[ "$src_dir" =~ [[:space:]] ]]; then
+        log_error "❌ Source directory path contains spaces, which may cause issues: $src_dir"
+        log_error "Consider using a path without spaces or quote all path usage."
+    fi
+    
+    # Validate that source directory contains BIDS-like structure
+    if [[ ! -d "$src_dir" ]]; then
+        log_error "❌ Source directory does not exist: $src_dir"
+        exit 1
+    fi
+    
+    # Check if source directory has any sub-* directories (basic BIDS check)
+    if ! ls "$src_dir"/sub-* &> /dev/null; then
+        log_error "⚠️  Warning: No 'sub-*' directories found in source directory."
+        log_error "This may not be a valid BIDS dataset structure."
+        read -p "Do you want to continue anyway? (y/n): " confirm
+        if [[ "$confirm" != "y" ]]; then
+            log_error "❌ Aborting script."
+            exit 1
+        fi
+    fi
+}
+
+# Function to create progress bar
+show_progress() {
+    local current=$1
+    local total=$2
+    local width=50
+    local percentage=$((current * 100 / total))
+    local completed=$((current * width / total))
+    
+    printf "\r["
+    printf "%*s" $completed | tr ' ' '='
+    printf "%*s" $((width - completed)) | tr ' ' '-'
+    printf "] %d%% (%d/%d)" $percentage $current $total
+}
+
+# Function to copy files with progress
+copy_with_progress() {
+    local src_dir=$1
+    local dest_dir=$2
+    
+    log_info "📁 Counting files to copy..."
+    local total_files=$(find "$src_dir" -type f | wc -l)
+    log_info "Found $total_files files to copy"
+    
+    log_info "📁 Copying files from $src_dir to $dest_dir..."
+    
+    # Use rsync with progress if available, otherwise fallback to basic rsync
+    if rsync --help | grep -q "progress" 2>/dev/null; then
+        rsync -av --progress --checksum "$src_dir/" "$dest_dir/"
+    else
+        rsync -av --checksum "$src_dir/" "$dest_dir/"
+    fi
+}
+
+# Function to create backup
+create_backup() {
+    local dest_dir=$1
+    local backup_dir="${dest_dir}_backup_$(date +%Y%m%d_%H%M%S)"
+    
+    if [[ -d "$dest_dir" ]] && [[ "$(ls -A "$dest_dir")" ]]; then
+        log_info "💾 Creating backup of existing destination: $backup_dir"
+        if cp -r "$dest_dir" "$backup_dir"; then
+            log_info "✅ Backup created successfully: $backup_dir"
+            return 0
+        else
+            log_error "❌ Failed to create backup"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
     echo "  -s src_dir               Source directory containing BIDS data" | tee /dev/fd/3
     echo "  -d dest_dir              Destination directory for DataLad datasets" | tee /dev/fd/3
     echo "  --skip_bids_validation   Skip BIDS validation" | tee /dev/fd/3
+    echo "  --dry-run                Show what would be done without executing" | tee /dev/fd/3
+    echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
+    echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Example:" | tee /dev/fd/3
     echo "  $0 -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
-    echo "  $0 --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  $0 --dry-run -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     exit 1
 }
 
 # Initialize variables
 skip_bids_validation=false
+dry_run=false
+create_backup_flag=false
+parallel_hash=false
 src_dir=""
 dest_root=""
 dest_dir=""
@@ -151,7 +337,17 @@ while [[ "$1" == -* ]]; do
         --skip_bids_validation)
             skip_bids_validation=true
             ;;
+        --dry-run)
+            dry_run=true
+            ;;
+        --backup)
+            create_backup_flag=true
+            ;;
+        --parallel-hash)
+            parallel_hash=true
+            ;;
         *)
+            log_error "❌ Unknown option: $1"
             usage
             ;;
     esac
@@ -163,23 +359,52 @@ if [[ -z "$src_dir" || -z "$dest_root" ]]; then
     usage
 fi
 
+# Validate arguments
+validate_arguments
+
 study_name=$(basename "$(dirname "$src_dir")")
 
 dest_dir="$dest_root/$study_name/rawdata"
 
 
 # Convert relative paths to absolute paths
-src_dir=$(cd "$src_dir"; pwd)
+if [[ ! -d "$src_dir" ]]; then
+    log_error "❌ Source directory does not exist: $src_dir"
+    exit 1
+fi
+
+src_dir=$(cd "$src_dir" && pwd) || {
+    log_error "❌ Failed to resolve absolute path for source directory: $src_dir"
+    exit 1
+}
+
 if [[ -d "$dest_dir" ]]; then
-    dest_dir=$(cd "$dest_dir"; pwd)
+    dest_dir=$(cd "$dest_dir" && pwd) || {
+        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
+        exit 1
+    }
 else
     log_info "Destination directory does not exist. Creating it."
-    mkdir -p "$dest_dir"
-    dest_dir=$(cd "$dest_dir"; pwd)
+    if ! mkdir -p "$dest_dir"; then
+        log_error "❌ Failed to create destination directory: $dest_dir"
+        exit 1
+    fi
+    dest_dir=$(cd "$dest_dir" && pwd) || {
+        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
+        exit 1
+    }
 fi
 
 # Print the header
 print_header
+
+# Check dependencies
+check_dependencies
+
+# Show dry run mode if enabled
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN MODE ENABLED - No actual changes will be made"
+fi
 
 # Validate BIDS dataset if validation is not skipped
 if [ "$skip_bids_validation" = false ]; then
@@ -189,29 +414,41 @@ if [ "$skip_bids_validation" = false ]; then
     fi
 fi
 
+# Validate arguments and paths
+validate_arguments
+
 # Check if the destination directory is empty
-if [[ "$(ls -A "$dest_dir")" ]]; then
+if [[ "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
     log_error "⚠️ Destination directory is not empty: $dest_dir"
-    read -p "Do you want to continue and overwrite the contents? (y/n): " confirm
-    if [[ "$confirm" != "y" ]]; then
-        log_error "❌ Aborting script."
-        exit 1
+    
+    if [[ "$create_backup_flag" == true ]]; then
+        if ! create_backup "$dest_dir"; then
+            log_error "❌ Failed to create backup. Aborting."
+            exit 1
+        fi
+    else
+        read -p "Do you want to continue and overwrite the contents? (y/n): " confirm
+        if [[ "$confirm" != "y" ]]; then
+            log_error "❌ Aborting script."
+            exit 1
+        fi
     fi
     log_info "🚨 Overwriting contents in the destination directory..."
 fi
 
+# Create backup of existing destination if not empty
+create_backup "$dest_dir"
+
 # Create DataLad superdataset
 log_info "📂 Creating DataLad superdataset in $dest_dir..."
-datalad create -c text2git --force "$dest_dir"
-if [[ $? -ne 0 ]]; then
+if ! safe_datalad create -c text2git --force "$dest_dir"; then
     log_error "❌ Failed to create DataLad superdataset. Exiting script."
     exit 1
 fi
 
 # Save the initial commit
 log_info "📝 Saving initial commit for the superdataset..."
-datalad save -m "Initial commit" -d "$dest_dir"
-if [[ $? -ne 0 ]]; then
+if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
     log_error "❌ Failed to save initial commit. Exiting script."
     exit 1
 fi
@@ -222,24 +459,32 @@ for subject_dir in "$src_dir"/sub-*; do
     if [[ -d "$subject_dir" ]]; then
         subject_name=$(basename "$subject_dir")
         log_info "📁 Creating sub-dataset for subject: $subject_name"
-        datalad create -d "$dest_dir" "$dest_dir/$subject_name"
-        if [[ $? -ne 0 ]]; then
+        if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
             log_error "❌ Failed to create sub-dataset for subject: $subject_name. Exiting script."
             exit 1
         fi
 
         # Save the sub-dataset creation in the superdataset
-        datalad save -m "Added sub-dataset for $subject_name" -d "$dest_dir"
+        if ! safe_datalad save -m "Added sub-dataset for $subject_name" -d "$dest_dir"; then
+            log_error "❌ Failed to save sub-dataset creation for: $subject_name. Exiting script."
+            exit 1
+        fi
     fi
 done
 
 # Copy files from source to DataLad dataset
-log_info "📁 Copying files from $src_dir to $dest_dir..."
-rsync -av --checksum "$src_dir/" "$dest_dir/"
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN: Would copy files from $src_dir to $dest_dir"
+else
+    copy_with_progress "$src_dir" "$dest_dir"
+fi
 
 # Save all changes in the superdataset and sub-datasets
 log_info "📝 Saving all changes in the superdataset and sub-datasets..."
-datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r
+if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
+    log_error "❌ Failed to save changes. Exiting script."
+    exit 1
+fi
 
 # Compare files in source and DataLad dataset
 if ! compare_files "$src_dir" "$dest_dir"; then
@@ -248,4 +493,17 @@ if ! compare_files "$src_dir" "$dest_dir"; then
 fi
 
 # Final message
-log_info "✅ DataLad superdataset and sub-datasets created successfully and files are verified to be identical!"
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN COMPLETED - No actual changes were made"
+    log_info "Re-run without --dry-run to execute the conversion"
+else
+    log_info "✅ DataLad superdataset and sub-datasets created successfully and files are verified to be identical!"
+    log_info "📊 Conversion Summary:"
+    log_info "   Source: $src_dir"
+    log_info "   Destination: $dest_dir"
+    log_info "   Study: $study_name"
+    if [[ "$create_backup_flag" == true ]]; then
+        log_info "   Backup created: Yes"
+    fi
+    log_info "   Log file: $LOGFILE"
+fi
