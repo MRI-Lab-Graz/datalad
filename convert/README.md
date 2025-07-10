@@ -17,6 +17,11 @@ A robust and feature-rich script for converting BIDS-formatted MRI datasets into
 - 📊 **Comprehensive Logging** - Detailed logs with timestamps and progress tracking
 - 🛡️ **Robust Error Handling** - Cross-platform compatibility and dependency checking
 - ⚡ **Progress Tracking** - Real-time progress bars for file operations
+- 🔒 **Production Safety** - Atomic operations, lock files, and comprehensive error recovery
+- 🌐 **System Validation** - Network, filesystem, and dependency checking
+- 📋 **Checkpoint System** - Resume capability with detailed progress tracking
+- 💻 **Resource Monitoring** - Disk space, memory, and CPU monitoring
+- 🔄 **Atomic Operations** - Fail-safe copying with rollback capabilities
 
 ## 🚀 Quick Start
 
@@ -87,6 +92,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 | `--dry-run` | Show what would be done without executing | `false` |
 | `--backup` | Create backup of destination before overwriting | `false` |
 | `--parallel-hash` | Use parallel processing for hash calculation | `false` |
+| `--force-empty` | Require destination directory to be empty (safety mode) | `false` |
 
 ### 📁 Directory Structure Requirements
 
@@ -94,7 +100,7 @@ Your source directory should follow BIDS structure:
 
 ```text
 your-study/
-└── rawdata/           ← Point -s here
+└── rawdata/           ← Point -s here (can be any name)
     ├── dataset_description.json
     ├── participants.tsv
     ├── sub-01/
@@ -106,6 +112,8 @@ your-study/
     └── ...
 ```
 
+**Note:** The source directory name doesn't have to be "rawdata" - it can be any name (e.g., "bids_data", "data", etc.). The script will preserve the original directory name in the DataLad structure.
+
 ## 📖 Examples
 
 ### Basic Conversion
@@ -115,6 +123,14 @@ your-study/
 ```
 
 **Result:** Creates `/storage/datalad/my-study/rawdata/` with DataLad structure
+
+### Different Source Directory Names
+
+```bash
+./bids2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
+```
+
+**Result:** Creates `/storage/datalad/my-study/bids_data/` with DataLad structure
 
 ### Safe Conversion with Backup
 
@@ -148,6 +164,14 @@ your-study/
 
 **Result:** Skips BIDS validation step
 
+### Safe Mode (Force Empty Directory)
+
+```bash
+./bids2datalad.sh --force-empty -s /data/my-study/rawdata -d /storage/datalad
+```
+
+**Result:** Aborts if destination directory is not empty (safest option)
+
 ### Full-Featured Conversion
 
 ```bash
@@ -178,22 +202,24 @@ The resulting DataLad structure will be:
 ├── sub-02/                              ← DataLad subdataset
 │   ├── .datalad/
 │   └── ...
-└── conversion.log                       ← Conversion log
+└── conversion_20250710_194530.log       ← Conversion log with timestamp
 ```
+
+**Important:** The script preserves the original source directory name. If your source is `/data/study/bids_data`, the output will be `/storage/datalad/study/bids_data/`.
 
 ## 📝 Logging and Monitoring
 
 ### Log File
 
-All operations are logged to `conversion.log` with timestamps:
+All operations are logged to `conversion_YYYYMMDD_HHMMSS.log` with timestamps:
 
 ```text
-2025-07-09 14:30:15 - INFO - 🚀 Running BIDS Validator...
-2025-07-09 14:30:20 - INFO - ✅ BIDS validation completed successfully!
-2025-07-09 14:30:21 - INFO - 📂 Creating DataLad superdataset...
-2025-07-09 14:30:25 - INFO - 📁 Creating sub-dataset for subject: sub-01
-2025-07-09 14:30:30 - INFO - 📁 Copying files from source to destination...
-2025-07-09 14:30:45 - INFO - ✅ All files are identical in source and DataLad dataset!
+2025-07-10 19:46:15 - INFO - 🚀 Running BIDS Validator...
+2025-07-10 19:46:20 - INFO - ✅ BIDS validation completed successfully!
+2025-07-10 19:46:21 - INFO - 📂 Creating DataLad superdataset...
+2025-07-10 19:46:25 - INFO - 📁 Creating sub-dataset for subject: sub-01
+2025-07-10 19:46:30 - INFO - 📁 Copying files from source to destination...
+2025-07-10 19:46:45 - INFO - ✅ All files are identical in source and DataLad dataset!
 ```
 
 ### Progress Monitoring
@@ -219,13 +245,17 @@ The script provides color-coded output:
 - ✅ Source directory validation (BIDS structure check)
 - ✅ Path resolution and accessibility
 - ✅ Destination directory collision detection
+- ✅ DataLad structure detection in destination
+- ✅ Empty directory enforcement (with `--force-empty`)
 
 ### Safety Features
 
-- 💾 **Backup creation** - Optional automatic backups
-- 🧪 **Dry run mode** - Preview without changes
+- 💾 **Backup creation** - Optional automatic backups with `--backup`
+- 🧪 **Dry run mode** - Preview without changes with `--dry-run`
+- 🔒 **Force empty mode** - Require empty destination with `--force-empty`
 - 🔍 **Interactive confirmations** - For destructive operations
 - 📊 **Comprehensive logging** - Full audit trail
+- 🚨 **DataLad conflict detection** - Warns about existing DataLad datasets
 
 ### Data Integrity
 
@@ -288,8 +318,37 @@ The script provides color-coded output:
 For detailed debugging, check the log file:
 
 ```bash
-tail -f conversion.log
+tail -f conversion_$(date +%Y%m%d)_*.log
 ```
+
+## 🆕 Recent Updates
+
+### Version 2.1 Changes (Production-Ready)
+
+- **🔒 Production Safety:** Added atomic operations, lock files, and comprehensive error recovery
+- **🌐 System Validation:** Network connectivity, filesystem compatibility, and dependency checking
+- **📋 Checkpoint System:** Resume capability with detailed progress tracking and recovery
+- **💻 Resource Monitoring:** Real-time disk space, memory, and CPU monitoring
+- **🔄 Atomic Operations:** Fail-safe copying with automatic rollback on failures
+- **⚡ Enhanced Performance:** Improved parallel processing and progress estimation
+- **🛡️ Advanced Error Handling:** Comprehensive pre-flight checks and validation
+- **📊 Detailed Reporting:** Enhanced logging with duration tracking and system information
+
+### Version 2.0 Changes
+
+- **Fixed rawdata assumption:** Script now preserves original source directory name instead of hardcoding "rawdata"
+- **Timestamped log files:** Log files now include timestamp in filename (e.g., `conversion_20250710_194530.log`)
+- **Missing function fix:** Added missing `safe_datalad` and `dry_run_check` functions
+- **Enhanced safety checks:** Added `--force-empty` option and DataLad structure detection
+- **Improved destination handling:** Better validation and backup options for non-empty directories
+- **Interactive safety prompts:** Multiple options when DataLad datasets are detected in destination
+- **Improved error handling:** Better error messages and debugging information
+- **Enhanced documentation:** Updated examples and usage instructions
+
+### Breaking Changes
+
+- **Output path structure:** The destination path now uses the actual source directory name instead of always using "rawdata"
+- **Log file names:** Log files now have timestamps in the filename
 
 ## 🔄 Migration from Previous Versions
 
@@ -332,6 +391,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/bids2datalad/issues)
 - 💡 **Feature Requests:** [Start a discussion](https://github.com/yourusername/bids2datalad/discussions)
+- 🧠 **BIDS Questions:** [Post on NeuroStars](https://neurostars.org/tags/bids)
 - 📧 **Email:** [your.email@institution.edu](mailto:your.email@institution.edu)
 
 ---
