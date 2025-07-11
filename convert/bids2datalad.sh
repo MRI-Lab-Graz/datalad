@@ -92,6 +92,154 @@ print_header() {
     echo "---------------------------------------------------" | tee /dev/fd/3
 }
 
+# Function to create temporary directory
+create_temp_dir() {
+    TEMP_DIR=$(mktemp -d -t "bids2datalad.XXXXXX")
+    if [[ ! -d "$TEMP_DIR" ]]; then
+        log_error "❌ Failed to create temporary directory"
+        exit 1
+    fi
+    log_info "📁 Created temporary directory: $TEMP_DIR"
+}
+
+# Function to check network connectivity (for remote DataLad operations)
+check_network() {
+    log_info "🌐 Checking network connectivity..."
+    
+    if command -v ping &> /dev/null; then
+        # Try to ping a reliable host
+        if ping -c 1 -W 5 8.8.8.8 &>/dev/null || ping -c 1 -W 5 1.1.1.1 &>/dev/null; then
+            log_info "✅ Network connectivity available"
+            return 0
+        else
+            log_error "⚠️ No network connectivity detected"
+            log_error "Some DataLad operations may fail if they require network access"
+            return 1
+        fi
+    else
+        log_info "⚠️ Cannot check network (ping not available)"
+        return 0
+    fi
+}
+
+# Function to validate file system compatibility
+check_filesystem_compatibility() {
+    local dest_dir=$1
+    
+    log_info "💾 Checking filesystem compatibility..."
+    
+    # Use the parent directory if dest_dir doesn't exist
+    local test_dir="$dest_dir"
+    if [[ ! -d "$dest_dir" ]]; then
+        test_dir=$(dirname "$dest_dir")
+    fi
+    
+    # Check if filesystem supports symbolic links
+    local test_file="$test_dir/.fs_test_$$"
+    local test_link="$test_dir/.fs_link_$$"
+    
+    echo "test" > "$test_file"
+    if ln -s "$test_file" "$test_link" 2>/dev/null; then
+        log_info "✅ Filesystem supports symbolic links"
+        rm -f "$test_file" "$test_link"
+    else
+        log_error "❌ Filesystem does not support symbolic links"
+        log_error "DataLad requires symbolic link support"
+        rm -f "$test_file" 2>/dev/null || true
+        return 1
+    fi
+    
+    # Check if filesystem supports extended attributes (used by git-annex)
+    if command -v getfattr &> /dev/null; then
+        echo "test" > "$test_file"
+        if setfattr -n user.test -v "value" "$test_file" 2>/dev/null; then
+            log_info "✅ Filesystem supports extended attributes"
+        else
+            log_error "⚠️ Filesystem may not support extended attributes"
+            log_error "This may affect git-annex functionality"
+        fi
+        rm -f "$test_file"
+    fi
+    
+    return 0
+}
+
+# Function to check for required Python modules
+check_python_modules() {
+    log_info "🐍 Checking Python modules..."
+    
+    if command -v python3 &> /dev/null; then
+        # Check for essential modules
+        local required_modules=("json" "os" "sys")
+        local missing_modules=()
+        
+        for module in "${required_modules[@]}"; do
+            if ! python3 -c "import $module" 2>/dev/null; then
+                missing_modules+=("$module")
+            fi
+        done
+        
+        if [[ ${#missing_modules[@]} -gt 0 ]]; then
+            log_error "❌ Missing Python modules: ${missing_modules[*]}"
+            return 1
+        fi
+        
+        log_info "✅ Required Python modules available"
+    else
+        log_error "❌ Python3 not available"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to check DataLad version compatibility
+check_datalad_version() {
+    log_info "🔧 Checking DataLad version..."
+    
+    if ! command -v datalad &> /dev/null; then
+        log_error "❌ DataLad not found"
+        return 1
+    fi
+    
+    local datalad_version=$(datalad --version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
+    log_info "DataLad version: $datalad_version"
+    
+    # Check for minimum version (example: 0.15.0)
+    if command -v python3 &> /dev/null; then
+        local version_check=$(python3 -c "
+import sys
+from packaging import version
+try:
+    current = version.parse('$datalad_version')
+    minimum = version.parse('0.15.0')
+    print('ok' if current >= minimum else 'old')
+except:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+        
+        if [[ "$version_check" == "old" ]]; then
+            log_error "⚠️ DataLad version $datalad_version may be too old"
+            log_error "Consider upgrading to version 0.15.0 or later"
+        elif [[ "$version_check" == "ok" ]]; then
+            log_info "✅ DataLad version is compatible"
+        fi
+    fi
+    
+    return 0
+}
+
+# Function to check if directory contains DataLad structures
+check_datalad_structure() {
+    local dir=$1
+    
+    if [[ -d "$dir/.datalad" ]] || [[ -f "$dir/.datalad/config" ]]; then
+        return 0  # Contains DataLad structure
+    else
+        return 1  # No DataLad structure found
+    fi
+}
+
 # Function to perform pre-flight system checks
 perform_preflight_checks() {
     log_info "🚀 Performing comprehensive pre-flight checks..."
@@ -870,17 +1018,6 @@ else
     log_info "   Temporary files: $TEMP_DIR"
 fi
 
-# Function to check if directory contains DataLad structures
-check_datalad_structure() {
-    local dir=$1
-    
-    if [[ -d "$dir/.datalad" ]] || [[ -f "$dir/.datalad/config" ]]; then
-        return 0  # Contains DataLad structure
-    else
-        return 1  # No DataLad structure found
-    fi
-}
-
 # Function to check disk space
 check_disk_space() {
     local src_dir=$1
@@ -1303,249 +1440,4 @@ handle_interruption() {
     exit 130
 }
 
-# Function to create temporary directory
-create_temp_dir() {
-    TEMP_DIR=$(mktemp -d -t "bids2datalad.XXXXXX")
-    if [[ ! -d "$TEMP_DIR" ]]; then
-        log_error "❌ Failed to create temporary directory"
-        exit 1
-    fi
-    log_info "📁 Created temporary directory: $TEMP_DIR"
-}
-
-# Function to check network connectivity (for remote DataLad operations)
-check_network() {
-    log_info "🌐 Checking network connectivity..."
-    
-    if command -v ping &> /dev/null; then
-        # Try to ping a reliable host
-        if ping -c 1 -W 5 8.8.8.8 &>/dev/null || ping -c 1 -W 5 1.1.1.1 &>/dev/null; then
-            log_info "✅ Network connectivity available"
-            return 0
-        else
-            log_error "⚠️ No network connectivity detected"
-            log_error "Some DataLad operations may fail if they require network access"
-            return 1
-        fi
-    else
-        log_info "⚠️ Cannot check network (ping not available)"
-        return 0
-    fi
-}
-
-# Function to validate file system compatibility
-check_filesystem_compatibility() {
-    local dest_dir=$1
-    
-    log_info "💾 Checking filesystem compatibility..."
-    
-    # Use the parent directory if dest_dir doesn't exist
-    local test_dir="$dest_dir"
-    if [[ ! -d "$dest_dir" ]]; then
-        test_dir=$(dirname "$dest_dir")
-    fi
-    
-    # Check if filesystem supports symbolic links
-    local test_file="$test_dir/.fs_test_$$"
-    local test_link="$test_dir/.fs_link_$$"
-    
-    echo "test" > "$test_file"
-    if ln -s "$test_file" "$test_link" 2>/dev/null; then
-        log_info "✅ Filesystem supports symbolic links"
-        rm -f "$test_file" "$test_link"
-    else
-        log_error "❌ Filesystem does not support symbolic links"
-        log_error "DataLad requires symbolic link support"
-        rm -f "$test_file" 2>/dev/null || true
-        return 1
-    fi
-    
-    # Check if filesystem supports extended attributes (used by git-annex)
-    if command -v getfattr &> /dev/null; then
-        echo "test" > "$test_file"
-        if setfattr -n user.test -v "value" "$test_file" 2>/dev/null; then
-            log_info "✅ Filesystem supports extended attributes"
-        else
-            log_error "⚠️ Filesystem may not support extended attributes"
-            log_error "This may affect git-annex functionality"
-        fi
-        rm -f "$test_file"
-    fi
-    
-    return 0
-}
-
-# Function to check for required Python modules
-check_python_modules() {
-    log_info "🐍 Checking Python modules..."
-    
-    if command -v python3 &> /dev/null; then
-        # Check for essential modules
-        local required_modules=("json" "os" "sys")
-        local missing_modules=()
-        
-        for module in "${required_modules[@]}"; do
-            if ! python3 -c "import $module" 2>/dev/null; then
-                missing_modules+=("$module")
-            fi
-        done
-        
-        if [[ ${#missing_modules[@]} -gt 0 ]]; then
-            log_error "❌ Missing Python modules: ${missing_modules[*]}"
-            return 1
-        fi
-        
-        log_info "✅ Required Python modules available"
-    else
-        log_error "❌ Python3 not available"
-        return 1
-    fi
-    
-    return 0
-}
-
-# Function to create checkpoint files for resume capability
-create_checkpoint() {
-    local phase=$1
-    local checkpoint_file="$TEMP_DIR/checkpoint_${phase}.json"
-    
-    cat > "$checkpoint_file" << EOF
-{
-    "phase": "$phase",
-    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "src_dir": "$src_dir",
-    "dest_dir": "$dest_dir",
-    "pid": "$$",
-    "logfile": "$LOGFILE"
-}
-EOF
-    
-    log_info "🔄 Checkpoint created: $phase"
-}
-
-# Function to monitor disk space during operation
-monitor_disk_space() {
-    local dest_dir=$1
-    local threshold_percent=95
-    
-    while true; do
-        sleep 30  # Check every 30 seconds
-        
-        local usage=$(df "$dest_dir" | tail -1 | awk '{print $5}' | sed 's/%//')
-        if [[ $usage -ge $threshold_percent ]]; then
-            log_error "🚨 CRITICAL: Disk usage at ${usage}% (threshold: ${threshold_percent}%)"
-            log_error "Pausing operations to prevent disk full condition"
-            
-            # Send signal to main process
-            kill -USR1 $$ 2>/dev/null || true
-            break
-        fi
-    done
-}
-
-# Function to estimate completion time
-estimate_completion() {
-    local total_files=$1
-    local processed_files=$2
-    local start_time=$3
-    
-    if [[ $processed_files -gt 0 ]]; then
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - start_time))
-        local rate=$((processed_files / elapsed))
-        
-        if [[ $rate -gt 0 ]]; then
-            local remaining_files=$((total_files - processed_files))
-            local eta=$((remaining_files / rate))
-            local eta_formatted=$(date -d "@$eta" -u +%H:%M:%S 2>/dev/null || echo "${eta}s")
-            
-            log_info "📊 Progress: $processed_files/$total_files files (ETA: $eta_formatted)"
-        fi
-    fi
-}
-
-# Function to handle disk full conditions
-handle_disk_full() {
-    log_error "🚨 DISK FULL CONDITION DETECTED"
-    log_error "Attempting emergency cleanup..."
-    
-    # Remove any temporary files
-    if [[ -n "$TEMP_DIR" ]] && [[ -d "$TEMP_DIR" ]]; then
-        rm -rf "$TEMP_DIR"/*
-    fi
-    
-    log_error "Please free up disk space and restart the conversion"
-    exit 1
-}
-
-# Set up disk full signal handler
-trap 'handle_disk_full' USR1
-
-# Function to perform atomic copy operation
-atomic_copy() {
-    local src_dir=$1
-    local dest_dir=$2
-    
-    log_info "⚛️ Performing atomic copy operation..."
-    
-    # Create temporary destination for atomic operation
-    ATOMIC_DEST="${dest_dir}.tmp_$$"
-    
-    # Create the temporary directory
-    mkdir -p "$ATOMIC_DEST"
-    
-    # Copy to temporary location first
-    if copy_with_progress "$src_dir" "$ATOMIC_DEST"; then
-        # Atomic move to final destination
-        if mv "$ATOMIC_DEST" "$dest_dir"; then
-            log_info "✅ Atomic copy completed successfully"
-            ATOMIC_DEST=""  # Clear variable to prevent cleanup
-            return 0
-        else
-            log_error "❌ Failed to move to final destination"
-            return 1
-        fi
-    else
-        log_error "❌ Failed to copy to temporary location"
-        return 1
-    fi
-}
-
-# Function to validate integrity with enhanced methods
-
-
-# Function to check DataLad version compatibility
-check_datalad_version() {
-    log_info "🔧 Checking DataLad version..."
-    
-    if ! command -v datalad &> /dev/null; then
-        log_error "❌ DataLad not found"
-        return 1
-    fi
-    
-    local datalad_version=$(datalad --version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
-    log_info "DataLad version: $datalad_version"
-    
-    # Check for minimum version (example: 0.15.0)
-    if command -v python3 &> /dev/null; then
-        local version_check=$(python3 -c "
-import sys
-from packaging import version
-try:
-    current = version.parse('$datalad_version')
-    minimum = version.parse('0.15.0')
-    print('ok' if current >= minimum else 'old')
-except:
-    print('unknown')
-" 2>/dev/null || echo "unknown")
-        
-        if [[ "$version_check" == "old" ]]; then
-            log_error "⚠️ DataLad version $datalad_version may be too old"
-            log_error "Consider upgrading to version 0.15.0 or later"
-        elif [[ "$version_check" == "ok" ]]; then
-            log_info "✅ DataLad version is compatible"
-        fi
-    fi
-    
-    return 0
-}
+# End of script - all functions are defined above
