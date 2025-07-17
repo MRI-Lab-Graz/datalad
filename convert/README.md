@@ -1,6 +1,6 @@
 # 🧠 BIDS to DataLad Conversion Tool
 
-[![Version](https://img.shields.io/badge/version-2.1-blue.svg)](https://github.com/yourusername/bids2datalad)
+[![Version](https://img.shields.io/badge/version-2.2-blue.svg)](https://github.com/yourusername/bids2datalad)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#prerequisites)
 [![Production Ready](https://img.shields.io/badge/production-ready-brightgreen.svg)](#production-ready-features)
@@ -43,10 +43,24 @@ A robust, production-ready script for converting BIDS-formatted MRI datasets int
 
 This tool automatically configures your DataLad dataset for optimal storage:
 
-- **No File Duplication** - Files are stored only once in git-annex, not in both working directory and .git
-- **Symlink Structure** - Working directory contains symlinks to git-annex content
-- **On-Demand Access** - Use `datalad get` to retrieve files when needed
-- **Space Optimization** - Significantly reduces storage requirements
+- **Smart File Handling** - Text files (.json, .tsv, .bval, .bvec, etc.) remain as regular files
+- **Large File Optimization** - Binary files (e.g., .nii, .nii.gz) are stored as symlinks to git-annex content
+- **No File Duplication** - Large files are stored only once in git-annex, not in both working directory and .git
+- **Immediate Access** - Files are immediately accessible without needing `datalad get`
+- **Space Optimization** - Significantly reduces storage requirements while maintaining full access
+
+### File Type Handling
+
+**Text files (always regular files):**
+- `.json` - BIDS metadata files
+- `.tsv` - Participant and event files
+- `.bval`, `.bvec` - Diffusion gradient files
+- `.txt`, `.md` - Documentation files
+- Code files (`.py`, `.sh`, `.m`)
+
+**Binary files (git-annex symlinks, but immediately accessible):**
+- `.nii`, `.nii.gz` - Neuroimaging data
+- Large files > 1MB
 
 ### Before and After
 
@@ -61,7 +75,9 @@ dataset/
 **Our optimized approach:**
 ```text
 dataset/
-├── sub-01_T1w.nii.gz -> .git/annex/objects/[hash]  # symlink
+├── dataset_description.json  # Regular file (always accessible)
+├── participants.tsv          # Regular file (always accessible)  
+├── sub-01_T1w.nii.gz -> .git/annex/objects/[hash]  # symlink (immediately accessible)
 └── .git/annex/objects/       # 500MB (only copy)
     └── [hash]/sub-01_T1w.nii.gz
 ```
@@ -152,7 +168,7 @@ your-study/
 ./bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad
 ```
 
-**Result:** Creates `/storage/datalad/my-study/rawdata/` with DataLad structure
+**Result:** Creates `/storage/datalad/rawdata/` with DataLad structure
 
 ### Different Source Directory Names
 
@@ -160,7 +176,7 @@ your-study/
 ./bids2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
 ```
 
-**Result:** Creates `/storage/datalad/my-study/bids_data/` with DataLad structure
+**Result:** Creates `/storage/datalad/bids_data/` with DataLad structure
 
 ### Safe Conversion with Backup
 
@@ -219,7 +235,7 @@ Given the command:
 The resulting DataLad structure will be:
 
 ```text
-/storage/datalad/study-name/rawdata/     ← DataLad superdataset
+/storage/datalad/rawdata/                ← DataLad superdataset
 ├── .datalad/                            ← DataLad metadata
 ├── .git/                                ← Git repository
 │   └── annex/                           ← Git-annex content storage
@@ -238,7 +254,7 @@ The resulting DataLad structure will be:
 └── conversion_YYYYMMDD_HHMMSS.log       ← Conversion log
 ```
 
-**Important:** The script preserves the original source directory name. If your source is `/data/study/bids_data`, the output will be `/storage/datalad/study/bids_data/`.
+**Important:** The script uses only the source directory name (e.g., "rawdata"). If your source is `/data/study/bids_data`, the output will be `/storage/datalad/bids_data/`.
 
 ## 🗂️ Working with Git-Annex Files
 
@@ -505,11 +521,18 @@ cat sub-01/anat/sub-01_T1w.nii.gz
 
 ## 🆕 Recent Updates
 
+### Version 2.2 Changes (Current)
+
+- **🗂️ Fixed Output Path Structure:** Removed unexpected nested directories in output path
+- **📄 Smart File Type Handling:** Text files (.json, .tsv, .bval, .bvec, etc.) now remain as regular files instead of symlinks
+- **⚡ Simplified Path Logic:** Output directory now uses only the source directory name for cleaner structure
+- **📁 Enhanced Git-Annex Configuration:** More granular control over which files become symlinks vs regular files
+
 ### Version 2.1 Changes (Production-Ready)
 
 - **🗂️ Git-Annex Storage Optimization:** Eliminates file duplication using git-annex
-- **� Comprehensive Integrity Verification:** SHA-256 checksum validation of every file
-- **�🔒 Production Safety:** Added atomic operations, lock files, and comprehensive error recovery
+- **🔐 Comprehensive Integrity Verification:** SHA-256 checksum validation of every file
+- **🔒 Production Safety:** Added atomic operations, lock files, and comprehensive error recovery
 - **🌐 System Validation:** Network connectivity, filesystem compatibility, and dependency checking
 - **📋 Checkpoint System:** Resume capability with detailed progress tracking and recovery
 - **💻 Resource Monitoring:** Real-time disk space, memory, and CPU monitoring
@@ -531,9 +554,10 @@ cat sub-01/anat/sub-01_T1w.nii.gz
 
 ### Breaking Changes
 
-- **Output path structure:** The destination path now uses the actual source directory name instead of always using "rawdata"
+- **Output path structure:** The destination path now uses only the source directory name (simplified from v2.1 nested structure)
+- **File type handling:** Text files (.json, .tsv, .bval, .bvec) are now regular files instead of symlinks
 - **Log file names:** Log files now have timestamps in the filename
-- **File access:** Large files are now stored as git-annex symlinks, requiring `datalad get` to access
+- **File access:** Large binary files are stored as git-annex symlinks, requiring `datalad get` to access
 
 ## 🤝 Contributing
 

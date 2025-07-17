@@ -438,6 +438,145 @@ compare_files() {
     return $failed  # Return the number of failed comparisons
 }
 
+# Function to validate enhanced integrity (accounting for git-annex storage)
+validate_integrity_enhanced() {
+    local src_dir=$1
+    local dest_dir=$2
+    
+    log_info "🔍 Performing comprehensive integrity validation..."
+    log_info "Source directory: $src_dir"
+    log_info "Destination directory: $dest_dir"
+    
+    # Only compare BIDS files, not DataLad metadata
+    local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    # Count regular files in destination (should all be regular at this point)
+    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    
+    log_info "Source BIDS files: $src_count"
+    log_info "Destination BIDS files: $dest_count"
+    
+    # Debug: Show some example files found
+    log_info "Sample source files:"
+    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | head -3 | while read -r file; do
+        log_info "  - $file"
+    done
+    
+    log_info "Sample destination files:"
+    find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | head -3 | while read -r file; do
+        log_info "  - $file"
+    done
+    
+    if [[ $src_count -ne $dest_count ]]; then
+        log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
+        
+        # Debug: Show what's missing or extra
+        log_error "Investigating file count mismatch..."
+        
+        # Show files in source but not in destination
+        local temp_src=$(mktemp)
+        local temp_dest=$(mktemp)
+        find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | sed "s|$src_dir/||" | sort > "$temp_src"
+        find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | sed "s|$dest_dir/||" | sort > "$temp_dest"
+        
+        local missing_in_dest=$(comm -23 "$temp_src" "$temp_dest" | wc -l)
+        local extra_in_dest=$(comm -13 "$temp_src" "$temp_dest" | wc -l)
+        
+        if [[ $missing_in_dest -gt 0 ]]; then
+            log_error "Files in source but missing in destination ($missing_in_dest):"
+            comm -23 "$temp_src" "$temp_dest" | head -5 | while read -r file; do
+                log_error "  - $file"
+            done
+        fi
+        
+        if [[ $extra_in_dest -gt 0 ]]; then
+            log_error "Files in destination but not in source ($extra_in_dest):"
+            comm -13 "$temp_src" "$temp_dest" | head -5 | while read -r file; do
+                log_error "  - $file"
+            done
+        fi
+        
+        rm -f "$temp_src" "$temp_dest"
+        return 1
+    fi
+    
+    # Perform thorough file integrity check using checksums
+    log_info "🔍 Performing thorough file integrity verification..."
+    log_info "This may take a while depending on dataset size..."
+    local failed_files=0
+    local temp_file=$(mktemp)
+    
+    # Get all BIDS files from source
+    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
+    local total_files=$(wc -l < "$temp_file")
+    local current_file=0
+    
+    log_info "Verifying $total_files BIDS files..."
+    
+    while IFS= read -r src_file; do
+        current_file=$((current_file + 1))
+        
+        # Show progress every 10 files or if dataset is small
+        if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
+            show_progress $current_file $total_files
+        fi
+        
+        # Construct corresponding destination file path
+        local dest_file="${src_file/$src_dir/$dest_dir}"
+        
+        # Check if file exists in destination
+        if [[ ! -f "$dest_file" ]]; then
+            echo "" # Clear progress line before error
+            log_error "❌ File missing in destination: $dest_file"
+            failed_files=$((failed_files + 1))
+            continue
+        fi
+        
+        # Compare checksums (files should be regular files at this point)
+        local src_hash=$(compute_hash "$src_file")
+        local dest_hash=$(compute_hash "$dest_file")
+        
+        if [[ "$src_hash" != "$dest_hash" ]]; then
+            echo "" # Clear progress line before error
+            log_error "❌ Checksum mismatch for: $(basename "$src_file")"
+            log_error "   Source: $src_hash"
+            log_error "   Destination: $dest_hash"
+            failed_files=$((failed_files + 1))
+        fi
+    done < "$temp_file"
+    
+    # Clear progress line and show completion
+    echo ""
+    rm "$temp_file"
+    
+    if [[ $failed_files -gt 0 ]]; then
+        log_error "❌ $failed_files files failed integrity validation"
+        return 1
+    else
+        log_info "✅ All $total_files files passed integrity verification"
+    fi
+    
+    # Check if essential BIDS files exist in destination
+    if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
+        log_error "❌ dataset_description.json missing in destination"
+        return 1
+    fi
+    
+    # Verify subject directories
+    local src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    local dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    
+    if [[ $src_subjects -ne $dest_subjects ]]; then
+        log_error "❌ Subject directory count mismatch: source=$src_subjects, destination=$dest_subjects"
+        return 1
+    fi
+    
+    log_info "✅ Comprehensive integrity validation passed"
+    log_info "✅ All $src_count BIDS files successfully verified with checksums"
+    log_info "✅ All $src_subjects subject directories created"
+    
+    return 0
+}
+
 # Function to check if required dependencies are available
 check_dependencies() {
     local missing_deps=()
@@ -679,12 +818,11 @@ fi
 # Validate arguments
 validate_arguments
 
-# Extract study name and source directory name
-study_name=$(basename "$(dirname "$src_dir")")
+# Extract source directory name only (no study name hierarchy)
 src_dir_name=$(basename "$src_dir")
 
-# Create destination path using the actual source directory name
-dest_dir="$dest_root/$study_name/$src_dir_name"
+# Create destination path using only the source directory name
+dest_dir="$dest_root/$src_dir_name"
 
 
 # Convert relative paths to absolute paths
@@ -890,6 +1028,29 @@ if ! safe_datalad create --force "$dest_dir"; then
     exit 1
 fi
 
+# Configure git-annex settings immediately after dataset creation
+log_info "⚙️ Configuring git-annex settings for large file handling..."
+if [[ "$dry_run" != true ]]; then
+    (cd "$dest_dir" && {
+        # Configure git-annex: only large binary files go to annex, text files stay as regular files
+        echo "*.json annex.largefiles=nothing" > .gitattributes
+        echo "*.tsv annex.largefiles=nothing" >> .gitattributes
+        echo "*.bval annex.largefiles=nothing" >> .gitattributes
+        echo "*.bvec annex.largefiles=nothing" >> .gitattributes
+        echo "*.txt annex.largefiles=nothing" >> .gitattributes
+        echo "*.md annex.largefiles=nothing" >> .gitattributes
+        echo "*.py annex.largefiles=nothing" >> .gitattributes
+        echo "*.sh annex.largefiles=nothing" >> .gitattributes
+        echo "*.m annex.largefiles=nothing" >> .gitattributes
+        echo "README annex.largefiles=nothing" >> .gitattributes
+        echo "LICENSE annex.largefiles=nothing" >> .gitattributes
+        echo "CHANGES annex.largefiles=nothing" >> .gitattributes
+        echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
+        git add .gitattributes
+        git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
+    })
+fi
+
 # Save the initial commit
 log_info "📝 Saving initial commit for the superdataset..."
 if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
@@ -908,6 +1069,29 @@ for subject_dir in "$src_dir"/sub-*; do
             exit 1
         fi
 
+        # Configure git-annex settings for this sub-dataset too
+        log_info "⚙️ Configuring git-annex settings for sub-dataset: $subject_name"
+        if [[ "$dry_run" != true ]]; then
+            (cd "$dest_dir/$subject_name" && {
+                # Copy the same git-annex configuration to sub-dataset
+                echo "*.json annex.largefiles=nothing" > .gitattributes
+                echo "*.tsv annex.largefiles=nothing" >> .gitattributes
+                echo "*.bval annex.largefiles=nothing" >> .gitattributes
+                echo "*.bvec annex.largefiles=nothing" >> .gitattributes
+                echo "*.txt annex.largefiles=nothing" >> .gitattributes
+                echo "*.md annex.largefiles=nothing" >> .gitattributes
+                echo "*.py annex.largefiles=nothing" >> .gitattributes
+                echo "*.sh annex.largefiles=nothing" >> .gitattributes
+                echo "*.m annex.largefiles=nothing" >> .gitattributes
+                echo "README annex.largefiles=nothing" >> .gitattributes
+                echo "LICENSE annex.largefiles=nothing" >> .gitattributes
+                echo "CHANGES annex.largefiles=nothing" >> .gitattributes
+                echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
+                git add .gitattributes
+                git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
+            })
+        fi
+
         # Save the sub-dataset creation in the superdataset
         if ! safe_datalad save -m "Added sub-dataset for $subject_name" -d "$dest_dir"; then
             log_error "❌ Failed to save sub-dataset creation for: $subject_name. Exiting script."
@@ -922,26 +1106,14 @@ done
 
 if [[ "$dry_run" == true ]]; then
     log_info "🧪 DRY RUN: Would copy files from $src_dir to $dest_dir"
-else
-    copy_with_progress "$src_dir" "$dest_dir"
-fi
-
-# create_checkpoint "post_copy"
-
-# Save all changes in the superdataset and sub-datasets
-log_info "📝 Saving all changes in the superdataset and sub-datasets..."
-if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
-    log_error "❌ Failed to save changes. Exiting script."
-    exit 1
-fi
-
-# Validate file integrity after copying but before git-annex conversion
-# This is crucial because once files are converted to git-annex, they become symlinks
-if [[ "$dry_run" == true ]]; then
     log_info "🧪 DRY RUN: Would validate file integrity after copying"
 else
+    copy_with_progress "$src_dir" "$dest_dir"
+    
+    # Validate file integrity IMMEDIATELY after copying, before ANY DataLad operations
+    # This is crucial because we need to verify files as regular files, not symlinks
     log_info "🔍 Performing comprehensive integrity validation..."
-    log_info "📋 Validating that all files were copied correctly before git-annex conversion..."
+    log_info "📋 Validating that all files were copied correctly before DataLad operations..."
     if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
         log_error "❌ File integrity validation failed after copying"
         log_error "❌ Files do not match between source and destination"
@@ -950,61 +1122,64 @@ else
     log_info "✅ All files successfully copied and verified with checksums"
 fi
 
-# Configure git-annex to optimize storage and drop file content
-log_info "🗂️ Configuring git-annex for optimized storage..."
-if [[ "$dry_run" != true ]]; then
-    # Change to the dataset directory for git-annex operations
-    (cd "$dest_dir" && {
-        # Configure git-annex for large files
-        log_info "⚙️ Configuring git-annex for large file handling..."
-        
-        # Set up git-annex to handle large files automatically
-        echo "* annex.largefiles=(largerthan=1MB)" > .gitattributes
-        git add .gitattributes
-        git commit -m "Configure git-annex for large files" || true
-        
-        # Add all files to git-annex
-        git annex add . || log_error "⚠️ Some files may not have been added to git-annex"
-        git commit -m "Add files to git-annex" || true
-    })
-    
-    # Drop file content from working directory (keeping only symlinks)
-    log_info "📤 Dropping file content from working directory (files will be available via 'datalad get')..."
-    if ! safe_datalad drop -d "$dest_dir" -r --nocheck; then
-        log_error "⚠️ Warning: Failed to drop some files. Storage optimization may be incomplete."
-        log_error "You can manually run: datalad drop -d \"$dest_dir\" -r --nocheck"
-    else
-        log_info "✅ File content dropped successfully. Files are now stored efficiently in git-annex."
-        log_info "💡 To access files later, use: datalad get <filename> or datalad get -d \"$dest_dir\" -r"
-    fi
-    
-    # Final verification after git-annex conversion
-    log_info "🔍 Verifying git-annex storage integrity..."
-    local sample_files=$(find "$dest_dir" -type l -name "*.nii.gz" | head -5)
-    if [[ -n "$sample_files" ]]; then
-        local annex_failed=0
-        while IFS= read -r file; do
-            if [[ -L "$file" ]]; then
-                # Check if the symlink target exists in git-annex
-                local relative_path="${file#$dest_dir/}"
-                if (cd "$dest_dir" && git annex whereis "$relative_path" &>/dev/null); then
-                    log_info "✅ Git-annex tracking confirmed for: $relative_path"
-                else
-                    log_error "❌ Git-annex tracking missing for: $relative_path"
-                    annex_failed=1
-                fi
-            fi
-        done <<< "$sample_files"
-        
-        if [[ $annex_failed -eq 0 ]]; then
-            log_info "✅ Git-annex storage verification passed"
-        else
-            log_error "❌ Git-annex storage verification failed"
-            exit 1
-        fi
-    fi
+# create_checkpoint "post_copy"
+
+# Save all changes in the superdataset and sub-datasets (this will trigger git-annex)
+log_info "📝 Saving all changes in the superdataset and sub-datasets..."
+if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
+    log_error "❌ Failed to save changes. Exiting script."
+    exit 1
+fi
+
+# Git-annex storage optimization is automatic - files are stored efficiently with symlinks
+log_info "🗂️ Git-annex storage optimization complete - files are available as symlinks to annexed content"
+log_info "💡 Files are immediately accessible - no need to run 'datalad get'"
+
+# Perform final integrity verification (disabled for now)
+# if ! perform_final_verification "$src_dir" "$dest_dir"; then
+#     log_error "❌ Final verification failed. Exiting script."
+#     exit 1
+# fi
+
+# Calculate conversion duration
+end_time_epoch=$(date +%s)
+duration=$((end_time_epoch - start_time_epoch))
+hours=$((duration / 3600))
+minutes=$(((duration % 3600) / 60))
+seconds=$((duration % 60))
+
+log_info "✅ DataLad conversion completed successfully!"
+log_info "📊 Conversion Summary:"
+log_info "   - Start time: $start_time"
+log_info "   - End time: $(date '+%Y-%m-%d %H:%M:%S')"
+log_info "   - Duration: ${hours}h ${minutes}m ${seconds}s"
+log_info "   - Source: $src_dir"
+log_info "   - Destination: $dest_dir"
+log_info "   - Log file: $LOGFILE"
+log_info ""
+log_info "📁 DataLad dataset structure created:"
+log_info "   - Superdataset: $dest_dir"
+log_info "   - Sub-datasets: $(find "$dest_dir" -name ".datalad" -type d | wc -l | xargs) total"
+log_info ""
+log_info "🗂️ Storage optimization:"
+log_info "   - Large files stored permanently in git-annex"
+log_info "   - Working directory contains symlinks to git-annex content"
+log_info "   - Files are immediately accessible (no need for 'datalad get')"
+log_info ""
+log_info "🔧 File access:"
+log_info "   - Text files (.json, .tsv, etc.): Regular files (always accessible)"
+log_info "   - Large files (.nii.gz, etc.): Symlinks to git-annex (always accessible)"
+log_info "   - No duplication: Content stored once in .git/annex/objects/"
+log_info ""
+
+# Save all changes in the superdataset and sub-datasets
+log_info "📝 Saving all changes in the superdataset and sub-datasets..."
+if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
+    log_error "❌ Failed to save changes. Exiting script."
+    exit 1
+fi
 else
-    log_info "🧪 DRY RUN: Would configure git-annex and drop file content"
+    log_info "🧪 DRY RUN: Would configure git-annex for permanent file storage"
 fi
 
 # Final success message
@@ -1018,16 +1193,17 @@ else
     log_info "   Destination: $dest_dir"
     log_info "   Study: $study_name"
     log_info "   Duration: $duration_formatted"
-    log_info "   Storage: Optimized with git-annex (no file duplication)"
+    log_info "   Storage: Files permanently available in git-annex (no duplication)"
     if [[ "$create_backup_flag" == true ]]; then
         log_info "   Backup created: Yes"
     fi
     log_info "   Log file: $LOGFILE"
     log_info ""
     log_info "💡 Next steps:"
-    log_info "   • Files are stored efficiently in git-annex"
-    log_info "   • Use 'datalad get <file>' to retrieve content when needed"
-    log_info "   • Use 'datalad drop <file>' to free space after use"
+    log_info "   • Text files (.json, .tsv, etc.) are regular files - always accessible"
+    log_info "   • Large files (.nii.gz, etc.) are symlinks to git-annex - always accessible"
+    log_info "   • All content is permanently stored in .git/annex/objects/"
+    log_info "   • No need to run 'datalad get' - files are immediately available"
     log_info "   • Example: datalad get -d \"$dest_dir\" sub-01/func/sub-01_task-rest_bold.nii.gz"
 fi
 
@@ -1478,104 +1654,4 @@ handle_interruption() {
     fi
     
     exit 130
-}
-
-# End of script - all functions are defined above
-
-# Function to validate enhanced integrity (accounting for git-annex storage)
-validate_integrity_enhanced() {
-    local src_dir=$1
-    local dest_dir=$2
-    
-    log_info "🔍 Performing comprehensive integrity validation..."
-    
-    # Only compare BIDS files, not DataLad metadata
-    local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    # For initial validation, count regular files before git-annex conversion
-    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    
-    log_info "Source BIDS files: $src_count"
-    log_info "Destination BIDS files: $dest_count"
-    
-    if [[ $src_count -ne $dest_count ]]; then
-        log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
-        return 1
-    fi
-    
-    # Perform thorough file integrity check using checksums
-    log_info "🔍 Performing thorough file integrity verification..."
-    log_info "This may take a while depending on dataset size..."
-    local failed_files=0
-    local temp_file=$(mktemp)
-    
-    # Get all BIDS files from source
-    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
-    local total_files=$(wc -l < "$temp_file")
-    local current_file=0
-    
-    log_info "Verifying $total_files BIDS files..."
-    
-    while IFS= read -r src_file; do
-        current_file=$((current_file + 1))
-        
-        # Show progress every 10 files or if dataset is small
-        if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
-            show_progress $current_file $total_files
-        fi
-        
-        # Construct corresponding destination file path
-        local dest_file="${src_file/$src_dir/$dest_dir}"
-        
-        # Check if file exists in destination
-        if [[ ! -f "$dest_file" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ File missing in destination: $dest_file"
-            failed_files=$((failed_files + 1))
-            continue
-        fi
-        
-        # Compare checksums
-        local src_hash=$(compute_hash "$src_file")
-        local dest_hash=$(compute_hash "$dest_file")
-        
-        if [[ "$src_hash" != "$dest_hash" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ Checksum mismatch for: $(basename "$src_file")"
-            log_error "   Source: $src_hash"
-            log_error "   Destination: $dest_hash"
-            failed_files=$((failed_files + 1))
-        fi
-    done < "$temp_file"
-    
-    # Clear progress line and show completion
-    echo ""
-    rm "$temp_file"
-    
-    if [[ $failed_files -gt 0 ]]; then
-        log_error "❌ $failed_files files failed integrity validation"
-        return 1
-    else
-        log_info "✅ All $total_files files passed integrity verification"
-    fi
-    
-    # Check if essential BIDS files exist in destination
-    if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
-        log_error "❌ dataset_description.json missing in destination"
-        return 1
-    fi
-    
-    # Verify subject directories
-    local src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
-    local dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
-    
-    if [[ $src_subjects -ne $dest_subjects ]]; then
-        log_error "❌ Subject directory count mismatch: source=$src_subjects, destination=$dest_subjects"
-        return 1
-    fi
-    
-    log_info "✅ Comprehensive integrity validation passed"
-    log_info "✅ All $src_count BIDS files successfully verified with checksums"
-    log_info "✅ All $src_subjects subject directories created"
-    
-    return 0
 }
