@@ -1,32 +1,33 @@
 # 🧠 BIDS to DataLad Conversion Tool
 
-[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/yourusername/bids2datalad)
+[![Version](https://img.shields.io/badge/version-2.1-blue.svg)](https://github.com/yourusername/bids2datalad)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#required-dependencies)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#prerequisites)
+[![Production Ready](https://img.shields.io/badge/production-ready-brightgreen.svg)](#production-ready-features)
 
-A robust and feature-rich script for converting BIDS-formatted MRI datasets into DataLad superdatasets with subject-level subdatasets. This tool ensures data integrity through comprehensive validation and verification processes.
+A robust, production-ready script for converting BIDS-formatted MRI datasets into DataLad superdatasets with subject-level subdatasets. This tool ensures data integrity through comprehensive validation and verification processes while optimizing storage efficiency using git-annex.
 
 ## ✨ Features
 
 - 🔍 **BIDS Validation** - Automatic validation using the official BIDS validator
 - 📂 **Hierarchical DataLad Structure** - Creates superdatasets with subject-level subdatasets
-- 🔐 **Data Integrity Verification** - SHA-256 checksum comparison between source and destination
+- �️ **Git-Annex Storage Optimization** - Eliminates file duplication using git-annex
+- 🔐 **Comprehensive Data Integrity** - SHA-256 checksum verification of every file
 - 🚀 **Performance Optimizations** - Parallel hash calculation and progress monitoring
 - 🧪 **Dry Run Mode** - Preview operations without making changes
-- 💾 **Automatic Backups** - Optional backup creation before overwriting
-- 📊 **Comprehensive Logging** - Detailed logs with timestamps and progress tracking
+- 💾 **Smart Backup System** - Optional backup creation for destination (not needed for source)
+- 📊 **Detailed Logging** - Comprehensive logs with timestamps and progress tracking
 - 🛡️ **Robust Error Handling** - Cross-platform compatibility and dependency checking
-- ⚡ **Progress Tracking** - Real-time progress bars for file operations
+- ⚡ **Progress Tracking** - Real-time progress bars for all file operations
 - 🔒 **Production Safety** - Atomic operations, lock files, and comprehensive error recovery
 - 🌐 **System Validation** - Network, filesystem, and dependency checking
-- 📋 **Checkpoint System** - Resume capability with detailed progress tracking
-- 💻 **Resource Monitoring** - Disk space, memory, and CPU monitoring
+-  **Resource Monitoring** - Disk space, memory, and CPU monitoring
 - 🔄 **Atomic Operations** - Fail-safe copying with rollback capabilities
 
 ## 🚀 Quick Start
 
 ```bash
-# Basic conversion
+# Basic conversion with git-annex optimization
 ./bids2datalad.sh -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # With all safety features enabled
@@ -34,6 +35,35 @@ A robust and feature-rich script for converting BIDS-formatted MRI datasets into
 
 # Preview what would be done (dry run)
 ./bids2datalad.sh --dry-run -s /path/to/bids_rawdata -d /path/to/datalad_destination
+```
+
+## 💾 Storage Efficiency
+
+### Git-Annex Integration
+
+This tool automatically configures your DataLad dataset for optimal storage:
+
+- **No File Duplication** - Files are stored only once in git-annex, not in both working directory and .git
+- **Symlink Structure** - Working directory contains symlinks to git-annex content
+- **On-Demand Access** - Use `datalad get` to retrieve files when needed
+- **Space Optimization** - Significantly reduces storage requirements
+
+### Before and After
+
+**Traditional approach:**
+```text
+dataset/
+├── sub-01_T1w.nii.gz         # 500MB file
+└── .git/annex/objects/       # 500MB duplicate
+    └── [hash]/sub-01_T1w.nii.gz
+```
+
+**Our optimized approach:**
+```text
+dataset/
+├── sub-01_T1w.nii.gz -> .git/annex/objects/[hash]  # symlink
+└── .git/annex/objects/       # 500MB (only copy)
+    └── [hash]/sub-01_T1w.nii.gz
 ```
 
 ## 📋 Prerequisites
@@ -191,21 +221,93 @@ The resulting DataLad structure will be:
 ```text
 /storage/datalad/study-name/rawdata/     ← DataLad superdataset
 ├── .datalad/                            ← DataLad metadata
-├── dataset_description.json             ← BIDS metadata
-├── participants.tsv                     ← BIDS participants file
+├── .git/                                ← Git repository
+│   └── annex/                           ← Git-annex content storage
+│       └── objects/                     ← Actual file content
+├── dataset_description.json             ← BIDS metadata (regular file)
+├── participants.tsv                     ← BIDS participants file (regular file)
 ├── sub-01/                              ← DataLad subdataset
 │   ├── .datalad/                        ← Subdataset metadata
 │   ├── anat/
-│   │   └── sub-01_T1w.nii.gz
+│   │   └── sub-01_T1w.nii.gz           ← Symlink to git-annex
 │   └── func/
-│       └── sub-01_task-rest_bold.nii.gz
+│       └── sub-01_task-rest_bold.nii.gz ← Symlink to git-annex
 ├── sub-02/                              ← DataLad subdataset
 │   ├── .datalad/
 │   └── ...
-└── conversion_20250710_194530.log       ← Conversion log with timestamp
+└── conversion_YYYYMMDD_HHMMSS.log       ← Conversion log
 ```
 
 **Important:** The script preserves the original source directory name. If your source is `/data/study/bids_data`, the output will be `/storage/datalad/study/bids_data/`.
+
+## 🗂️ Working with Git-Annex Files
+
+### Accessing Files
+
+After conversion, large files are stored as symlinks. To access them:
+
+```bash
+# Get a specific file
+datalad get sub-01/anat/sub-01_T1w.nii.gz
+
+# Get all files in a directory
+datalad get sub-01/func/
+
+# Get all files in the dataset
+datalad get -r .
+```
+
+### Freeing Space
+
+After you're done with files, you can free up space:
+
+```bash
+# Drop a specific file
+datalad drop sub-01/anat/sub-01_T1w.nii.gz
+
+# Drop all files in a directory
+datalad drop sub-01/func/
+
+# Drop all files in the dataset
+datalad drop -r .
+```
+
+### Checking File Status
+
+```bash
+# Check which files are present locally
+datalad status
+
+# Check file availability
+git annex whereis sub-01/anat/sub-01_T1w.nii.gz
+
+# List all files (both present and absent)
+git annex list
+```
+
+## 🔍 Data Integrity Verification
+
+### Comprehensive File Checking
+
+The script performs thorough integrity verification:
+
+1. **Pre-conversion verification** - Checks all files are copied correctly
+2. **SHA-256 checksum validation** - Every file is verified with checksums
+3. **Git-annex integrity check** - Verifies git-annex storage is working
+4. **Progress monitoring** - Real-time progress during verification
+
+### Verification Process
+
+```text
+🔍 Performing comprehensive integrity validation...
+This may take a while depending on dataset size...
+Verifying 150 BIDS files...
+[====================] 100% (150/150)
+✅ All 150 files passed integrity verification
+🔍 Verifying git-annex storage integrity...
+✅ Git-annex tracking confirmed for: sub-01_T1w.nii.gz
+✅ Git-annex storage verification passed
+```
 
 ## 📝 Logging and Monitoring
 
@@ -214,12 +316,16 @@ The resulting DataLad structure will be:
 All operations are logged to `conversion_YYYYMMDD_HHMMSS.log` with timestamps:
 
 ```text
-2025-07-10 19:46:15 - INFO - 🚀 Running BIDS Validator...
-2025-07-10 19:46:20 - INFO - ✅ BIDS validation completed successfully!
-2025-07-10 19:46:21 - INFO - 📂 Creating DataLad superdataset...
-2025-07-10 19:46:25 - INFO - 📁 Creating sub-dataset for subject: sub-01
-2025-07-10 19:46:30 - INFO - 📁 Copying files from source to destination...
-2025-07-10 19:46:45 - INFO - ✅ All files are identical in source and DataLad dataset!
+2025-07-17 14:30:15 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 14:30:20 - INFO - ✅ BIDS validation completed successfully!
+2025-07-17 14:30:21 - INFO - 📂 Creating DataLad superdataset...
+2025-07-17 14:30:25 - INFO - 📁 Creating sub-dataset for subject: sub-01
+2025-07-17 14:30:30 - INFO - 📁 Copying files from source to destination...
+2025-07-17 14:30:45 - INFO - 🔍 Performing comprehensive integrity validation...
+2025-07-17 14:30:50 - INFO - ✅ All 150 files passed integrity verification
+2025-07-17 14:30:55 - INFO - 🗂️ Configuring git-annex for optimized storage...
+2025-07-17 14:31:00 - INFO - ✅ File content dropped successfully
+2025-07-17 14:31:05 - INFO - ✅ DataLad conversion completed successfully!
 ```
 
 ### Progress Monitoring
@@ -227,6 +333,7 @@ All operations are logged to `conversion_YYYYMMDD_HHMMSS.log` with timestamps:
 - Real-time progress bars for file operations
 - File counting and processing status
 - Hash verification progress (with parallel option)
+- Git-annex configuration progress
 
 ### Terminal Output
 
@@ -257,11 +364,38 @@ The script provides color-coded output:
 - 📊 **Comprehensive logging** - Full audit trail
 - 🚨 **DataLad conflict detection** - Warns about existing DataLad datasets
 
+### Why Backup is Not Needed for Source
+
+**Important:** You do **NOT** need to backup your source BIDS data because:
+
+- ✅ **Read-only operation** - Source files are never modified
+- ✅ **Source remains untouched** - Original BIDS dataset is completely preserved
+- ✅ **Creates new dataset** - Conversion creates a new DataLad dataset elsewhere
+- ✅ **Git-annex integrity** - Files are checksummed and tracked by git-annex
+
+### When Backup is Useful
+
+The `--backup` option is for the **destination** directory only:
+
+- 🔄 **Re-running conversion** - Backup existing DataLad dataset before overwriting
+- 🛡️ **Safety net** - Preserve previous conversion attempts
+- 📁 **Destination conflicts** - Handle existing destination directories safely
+
+### Automatic Safety Checks
+
+- ✅ **Dependency verification** - Checks all required tools are installed
+- ✅ **Source validation** - Verifies BIDS structure and accessibility
+- ✅ **Path resolution** - Ensures all paths are valid and accessible
+- ✅ **Destination collision** - Detects and handles existing destinations
+- ✅ **File integrity** - Comprehensive SHA-256 verification
+- ✅ **Git-annex validation** - Ensures storage optimization works correctly
+
 ### Data Integrity
 
-- 🔐 **SHA-256 verification** - Every file is hash-verified
+- 🔐 **SHA-256 verification** - Every file is hash-verified before and after git-annex conversion
 - 📝 **Operation logging** - Complete operation history
 - 🔄 **Atomic operations** - Rollback on failure
+- 🗂️ **Git-annex integrity** - Verifies git-annex storage is working correctly
 
 ## 🚀 Performance Features
 
@@ -270,12 +404,14 @@ The script provides color-coded output:
 - **Parallel hash calculation** - Significantly faster for large datasets
 - **Concurrent file verification** - Uses multiple CPU cores
 - **Optimized rsync** - Efficient file copying with progress
+- **Background operations** - Non-blocking operations where possible
 
 ### Resource Management
 
 - **Memory efficient** - Streams large files without loading into memory
 - **Disk space aware** - Checks available space before operations
 - **Process monitoring** - Graceful handling of interruptions
+- **Git-annex optimization** - Eliminates storage duplication
 
 ## 🐛 Troubleshooting
 
@@ -313,6 +449,29 @@ The script provides color-coded output:
 
 **Solution:** Check source file integrity and re-run conversion
 
+#### Git-Annex Issues
+
+```bash
+❌ Git-annex tracking missing for: filename
+```
+
+**Solution:** Check git-annex installation and repository integrity
+
+### Git-Annex File Access Issues
+
+If you can't access files after conversion:
+
+```bash
+# Check if files are present
+datalad status
+
+# Get missing files
+datalad get <filename>
+
+# Check git-annex status
+git annex whereis <filename>
+```
+
 ### Debug Mode
 
 For detailed debugging, check the log file:
@@ -321,11 +480,36 @@ For detailed debugging, check the log file:
 tail -f conversion_$(date +%Y%m%d)_*.log
 ```
 
+## 🔄 Migration from Previous Versions
+
+If you're upgrading from an earlier version:
+
+1. **New git-annex optimization** - Files are now stored efficiently
+2. **Enhanced integrity checking** - More thorough file verification
+3. **Improved error handling** - Better error messages and recovery
+4. **Enhanced logging** - More detailed operation logs
+5. **Performance improvements** - Faster execution with parallel options
+
+### Post-Conversion File Access
+
+After conversion, remember to use `datalad get` to access files:
+
+```bash
+# Old way (files were always present)
+cat sub-01/anat/sub-01_T1w.nii.gz
+
+# New way (get files first)
+datalad get sub-01/anat/sub-01_T1w.nii.gz
+cat sub-01/anat/sub-01_T1w.nii.gz
+```
+
 ## 🆕 Recent Updates
 
 ### Version 2.1 Changes (Production-Ready)
 
-- **🔒 Production Safety:** Added atomic operations, lock files, and comprehensive error recovery
+- **🗂️ Git-Annex Storage Optimization:** Eliminates file duplication using git-annex
+- **� Comprehensive Integrity Verification:** SHA-256 checksum validation of every file
+- **�🔒 Production Safety:** Added atomic operations, lock files, and comprehensive error recovery
 - **🌐 System Validation:** Network connectivity, filesystem compatibility, and dependency checking
 - **📋 Checkpoint System:** Resume capability with detailed progress tracking and recovery
 - **💻 Resource Monitoring:** Real-time disk space, memory, and CPU monitoring
@@ -349,15 +533,7 @@ tail -f conversion_$(date +%Y%m%d)_*.log
 
 - **Output path structure:** The destination path now uses the actual source directory name instead of always using "rawdata"
 - **Log file names:** Log files now have timestamps in the filename
-
-## 🔄 Migration from Previous Versions
-
-If you're upgrading from an earlier version:
-
-1. **New options available** - Check updated usage with `-h`
-2. **Improved error handling** - Better error messages and recovery
-3. **Enhanced logging** - More detailed operation logs
-4. **Performance improvements** - Faster execution with parallel options
+- **File access:** Large files are now stored as git-annex symlinks, requiring `datalad get` to access
 
 ## 🤝 Contributing
 
@@ -385,6 +561,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [BIDS Standard](https://bids.neuroimaging.io/) - Brain Imaging Data Structure
 - [DataLad](https://www.datalad.org/) - Data management and publication platform
+- [Git-Annex](https://git-annex.branchable.com/) - Managing files with git, without checking their contents in
 - [BIDS Validator](https://github.com/bids-standard/bids-validator) - Official BIDS validation tool
 
 ## 📞 Support
