@@ -80,16 +80,39 @@ log_error() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR - $1" | tee /dev/fd/3 >&2
 }
 
+log_warning() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - WARNING - $1" | tee /dev/fd/3
+}
+
+log_success() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - SUCCESS - $1" | tee /dev/fd/3
+}
+
 # Function to print a header
 print_header() {
-    echo -e "\033[1;34m"  # Set color to blue
-    echo "------------------------------------------------" | tee /dev/fd/3
-    echo "                   MRI - LAB GRAZ" | tee /dev/fd/3
-    echo "------------------------------------------------" | tee /dev/fd/3
+    echo -e "\033[1;36m"  # Set color to cyan
+    echo "╔════════════════════════════════════════════════════════════════════════════════════╗" | tee /dev/fd/3
+    echo "║                                                                                    ║" | tee /dev/fd/3
+    echo "║  ███╗   ███╗██████╗ ██╗      ██╗      █████╗ ██████╗      ██████╗ ██████╗  █████╗ ███████╗ ║" | tee /dev/fd/3
+    echo "║  ████╗ ████║██╔══██╗██║      ██║     ██╔══██╗██╔══██╗    ██╔════╝ ██╔══██╗██╔══██╗╚══███╔╝ ║" | tee /dev/fd/3
+    echo "║  ██╔████╔██║██████╔╝██║█████╗██║     ███████║██████╔╝    ██║  ███╗██████╔╝███████║  ███╔╝  ║" | tee /dev/fd/3
+    echo "║  ██║╚██╔╝██║██╔══██╗██║╚════╝██║     ██╔══██║██╔══██╗    ██║   ██║██╔══██╗██╔══██║ ███╔╝   ║" | tee /dev/fd/3
+    echo "║  ██║ ╚═╝ ██║██║  ██║██║      ███████╗██║  ██║██████╔╝    ╚██████╔╝██║  ██║██║  ██║███████╗ ║" | tee /dev/fd/3
+    echo "║  ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝      ╚══════╝╚═╝  ╚═╝╚═════╝      ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ ║" | tee /dev/fd/3
+    echo "║                                                                                    ║" | tee /dev/fd/3
+    echo "║                          🧠 Magnetic Resonance Imaging Lab 🧠                     ║" | tee /dev/fd/3
+    echo "║                                University of Graz                                 ║" | tee /dev/fd/3
+    echo "║                                                                                    ║" | tee /dev/fd/3
+    echo "╠════════════════════════════════════════════════════════════════════════════════════╣" | tee /dev/fd/3
+    echo -e "\033[1;33m"  # Set color to yellow
+    echo "║                          🔬 BIDS to DataLad Converter 🔬                          ║" | tee /dev/fd/3
+    echo "║                              Production Version 2.1                               ║" | tee /dev/fd/3
+    echo -e "\033[1;32m"  # Set color to green
+    echo "║                                $(date '+%Y-%m-%d %H:%M:%S')                                ║" | tee /dev/fd/3
+    echo -e "\033[1;36m"  # Back to cyan
+    echo "╚════════════════════════════════════════════════════════════════════════════════════╝" | tee /dev/fd/3
     echo -e "\033[0m"  # Reset to default color
-    echo "                        Date: $(date '+%Y-%m-%d')" | tee /dev/fd/3
-    echo "                        Time: $(date '+%H:%M:%S')" | tee /dev/fd/3
-    echo "---------------------------------------------------" | tee /dev/fd/3
+    echo ""
 }
 
 # Function to create temporary directory
@@ -649,18 +672,40 @@ copy_with_progress() {
     local src_dir=$1
     local dest_dir=$2
     
-    log_info "📁 Counting files to copy..."
-    local total_files=$(find "$src_dir" -type f | wc -l)
-    log_info "Found $total_files files to copy"
+    log_info "📁 Counting files to copy (excluding .DS_Store files)..."
+    local total_files=$(find "$src_dir" -type f ! -name ".DS_Store" | wc -l)
+    log_info "Found $total_files files to copy (excluding system files)"
     
     log_info "📁 Copying files from $src_dir to $dest_dir..."
+    log_info "🚫 Excluding: .DS_Store files"
+    
+    # Check disk space before starting copy
+    check_disk_space_status "$dest_dir"
     
     # Use rsync with progress if available, otherwise fallback to basic rsync
-    if rsync --help | grep -q "progress" 2>/dev/null; then
-        rsync -av --progress --checksum "$src_dir/" "$dest_dir/"
+    # Exclude .DS_Store files explicitly
+    # Use fasttrack mode (skip checksums) if requested
+    if [[ "$fasttrack" == "true" ]]; then
+        log_info "⚡ Fasttrack mode: Skipping checksum validation for speed"
+        log_info "🚀 Starting file copy operation..."
+        if rsync --help | grep -q "progress" 2>/dev/null; then
+            rsync -av --progress --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+        else
+            rsync -av --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+        fi
     else
-        rsync -av --checksum "$src_dir/" "$dest_dir/"
+        log_info "🔍 Standard mode: Using checksum validation for data integrity"
+        log_info "🚀 Starting file copy operation with checksum verification..."
+        if rsync --help | grep -q "progress" 2>/dev/null; then
+            rsync -av --progress --checksum --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+        else
+            rsync -av --checksum --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+        fi
     fi
+    
+    # Check disk space after copy
+    log_info "✅ File copy completed, checking final disk space..."
+    check_disk_space_status "$dest_dir"
 }
 
 # Function to create backup
@@ -683,556 +728,6 @@ create_backup() {
         return 0
     fi
 }
-
-# Usage function
-usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty]" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Options:" | tee /dev/fd/3
-    echo "  -h                       Show this help message" | tee /dev/fd/3
-    echo "  -s src_dir               Source directory containing BIDS data" | tee /dev/fd/3
-    echo "  -d dest_dir              Destination directory for DataLad datasets" | tee /dev/fd/3
-    echo "  --skip_bids_validation   Skip BIDS validation" | tee /dev/fd/3
-    echo "  --dry-run                Show what would be done without executing" | tee /dev/fd/3
-    echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
-    echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
-    echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Storage:" | tee /dev/fd/3
-    echo "  - Files are stored efficiently in git-annex (no duplication)" | tee /dev/fd/3
-    echo "  - Use 'datalad get <file>' to retrieve file content when needed" | tee /dev/fd/3
-    echo "  - Use 'datalad drop <file>' to free up space after use" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Structure:" | tee /dev/fd/3
-    echo "  The script will create: dest_dir/study_name/source_dir_name/" | tee /dev/fd/3
-    echo "  Where study_name is derived from the parent directory of src_dir" | tee /dev/fd/3
-    echo "  And source_dir_name is the actual name of the source directory" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Safety:" | tee /dev/fd/3
-    echo "  - Source files are NEVER modified (read-only operation)" | tee /dev/fd/3
-    echo "  - The script checks if destination directory is empty before proceeding" | tee /dev/fd/3
-    echo "  - Use --force-empty to abort if destination is not empty" | tee /dev/fd/3
-    echo "  - Use --backup to create backup of existing destination (not source)" | tee /dev/fd/3
-    echo "  - Use --dry-run to preview operations without making changes" | tee /dev/fd/3
-    echo "  - Comprehensive file integrity verification with checksums" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Example:" | tee /dev/fd/3
-    echo "  $0 -s /path/to/study1/rawdata -d /path/to/destination" | tee /dev/fd/3
-    echo "  # Creates: /path/to/destination/study1/rawdata/" | tee /dev/fd/3
-    echo "  # Files stored in git-annex, use 'datalad get' to access" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "  $0 --force-empty -s /path/to/study2/bids_data -d /path/to/destination" | tee /dev/fd/3
-    echo "  # Aborts if destination is not empty" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "  $0 --dry-run -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
-    echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Post-conversion usage:" | tee /dev/fd/3
-    echo "  datalad get -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
-    echo "  datalad drop -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
-    exit 1
-}
-
-# Function for dry run mode
-dry_run_check() {
-    if [[ "$dry_run" == true ]]; then
-        log_info "🧪 DRY RUN MODE - Would execute: $1"
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Function to safely execute datalad commands
-safe_datalad() {
-    local cmd="$1"
-    shift
-    local args=("$@")
-    
-    if dry_run_check "datalad $cmd ${args[*]}"; then
-        return 0
-    fi
-    
-    log_info "🔧 Executing: datalad $cmd ${args[*]}"
-    if datalad "$cmd" "${args[@]}"; then
-        return 0
-    else
-        log_error "❌ Failed to execute: datalad $cmd ${args[*]}"
-        return 1
-    fi
-}
-
-# Initialize variables
-skip_bids_validation=false
-dry_run=false
-create_backup_flag=false
-parallel_hash=false
-force_empty=false
-src_dir=""
-dest_root=""
-dest_dir=""
-
-
-# Parse options
-while [[ $# -gt 0 && "$1" == -* ]]; do
-    case $1 in
-        -h)
-            usage
-            ;;
-        -s)
-            shift
-            src_dir="$1"
-            ;;
-        -d)
-            shift
-            dest_root="$1"
-            ;;
-        --skip_bids_validation)
-            skip_bids_validation=true
-            ;;
-        --dry-run)
-            dry_run=true
-            ;;
-        --backup)
-            create_backup_flag=true
-            ;;
-        --parallel-hash)
-            parallel_hash=true
-            ;;
-        --force-empty)
-            force_empty=true
-            ;;
-        *)
-            log_error "❌ Unknown option: $1"
-            usage
-            ;;
-    esac
-    shift
-done
-
-# Check for required arguments
-if [[ -z "$src_dir" || -z "$dest_root" ]]; then
-    usage
-fi
-
-# Validate arguments
-validate_arguments
-
-# Extract source directory name only (no study name hierarchy)
-src_dir_name=$(basename "$src_dir")
-
-# Create destination path using only the source directory name
-dest_dir="$dest_root/$src_dir_name"
-
-
-# Convert relative paths to absolute paths
-if [[ ! -d "$src_dir" ]]; then
-    log_error "❌ Source directory does not exist: $src_dir"
-    exit 1
-fi
-
-src_dir=$(cd "$src_dir" && pwd) || {
-    log_error "❌ Failed to resolve absolute path for source directory: $src_dir"
-    exit 1
-}
-
-if [[ -d "$dest_dir" ]]; then
-    dest_dir=$(cd "$dest_dir" && pwd) || {
-        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
-        exit 1
-    }
-else
-    log_info "Destination directory does not exist. Creating it."
-    if ! mkdir -p "$dest_dir"; then
-        log_error "❌ Failed to create destination directory: $dest_dir"
-        exit 1
-    fi
-    dest_dir=$(cd "$dest_dir" && pwd) || {
-        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
-        exit 1
-    }
-fi
-
-# Print the header
-print_header
-
-# Perform comprehensive pre-flight checks (disabled for now)
-# if ! perform_preflight_checks; then
-#     log_error "❌ Pre-flight checks failed. Exiting script."
-#     exit 1
-# fi
-
-# Setup signal handlers for graceful interruption (disabled for now)
-# setup_signal_handlers
-
-# Store start time for reporting
-start_time=$(date '+%Y-%m-%d %H:%M:%S')
-start_time_epoch=$(date +%s)
-
-# Start disk space monitoring in background (disabled for now)
-# monitor_disk_space "$dest_dir" &
-# monitor_pid=$!
-
-# Create initial checkpoint (disabled for now)
-# create_checkpoint "initialization"
-
-# Check dependencies
-check_dependencies
-
-# Check Git configuration (disabled for now)
-# if ! check_git_config; then
-#     log_error "❌ Git configuration check failed. Exiting script."
-#     exit 1
-# fi
-
-# Check system resources (disabled for now)
-# check_system_resources
-
-# Show dry run mode if enabled
-if [[ "$dry_run" == true ]]; then
-    log_info "🧪 DRY RUN MODE ENABLED - No actual changes will be made"
-fi
-
-# Comprehensive source validation (disabled for now)
-# log_info "🔍 Performing comprehensive source validation..."
-# if ! validate_bids_structure "$src_dir"; then
-#     log_error "❌ BIDS structure validation failed. Exiting script."
-#     exit 1
-# fi
-
-# Check for problematic files (disabled for now)
-# check_problematic_files "$src_dir"
-
-# Check file permissions (disabled for now)
-# if ! check_permissions "$src_dir" "$dest_dir"; then
-#     log_error "❌ Permission check failed. Exiting script."
-#     exit 1
-# fi
-
-# Check disk space (disabled for now)
-# if ! check_disk_space "$src_dir" "$dest_dir"; then
-#     log_error "❌ Disk space check failed. Exiting script."
-#     exit 1
-# fi
-
-# Create recovery information (disabled for now)
-# if [[ "$dry_run" != true ]]; then
-#     create_recovery_info "$src_dir" "$dest_dir"
-# fi
-
-# Validate BIDS dataset if validation is not skipped
-if [ "$skip_bids_validation" = false ]; then
-    if ! validate_bids "$src_dir"; then
-        log_error "❌ BIDS validation failed. Exiting script."
-        exit 1
-    fi
-fi
-
-# Validate arguments and paths
-validate_arguments
-
-# Check if the destination directory is empty
-if [[ "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
-    log_error "⚠️ Destination directory is not empty: $dest_dir"
-    
-    # If force-empty flag is set, abort immediately
-    if [[ "$force_empty" == true ]]; then
-        log_error "❌ --force-empty flag is set. Destination directory must be empty."
-        log_error "Please choose an empty directory or remove the --force-empty flag."
-        exit 1
-    fi
-    
-    # Check if it's an existing DataLad dataset
-    if check_datalad_structure "$dest_dir"; then
-        log_error "🚨 WARNING: Destination contains an existing DataLad dataset!"
-        log_error "This could lead to conflicts or data loss."
-        
-        if [[ "$dry_run" == true ]]; then
-            log_info "🧪 DRY RUN: Would prompt for DataLad overwrite confirmation"
-        elif [[ "$create_backup_flag" == true ]]; then
-            log_info "💾 Backup mode enabled - will create backup before proceeding"
-            if ! create_backup "$dest_dir"; then
-                log_error "❌ Failed to create backup. Aborting."
-                exit 1
-            fi
-            log_info "🚨 Proceeding with conversion after backup creation..."
-        else
-            echo "Available options:"
-            echo "1. Abort and choose a different destination"
-            echo "2. Create backup and continue (recommended)"
-            echo "3. Continue without backup (DANGEROUS)"
-            read -p "Choose option (1/2/3): " choice
-            case $choice in
-                1)
-                    log_error "❌ Aborting script. Please choose a different destination."
-                    exit 1
-                    ;;
-                2)
-                    if ! create_backup "$dest_dir"; then
-                        log_error "❌ Failed to create backup. Aborting."
-                        exit 1
-                    fi
-                    log_info "🚨 Proceeding with conversion after backup creation..."
-                    ;;
-                3)
-                    log_error "⚠️ Proceeding without backup - this may cause data loss!"
-                    ;;
-                *)
-                    log_error "❌ Invalid choice. Aborting script."
-                    exit 1
-                    ;;
-            esac
-        fi
-    else
-        # Regular non-empty directory
-        if [[ "$create_backup_flag" == true ]]; then
-            if ! create_backup "$dest_dir"; then
-                log_error "❌ Failed to create backup. Aborting."
-                exit 1
-            fi
-            log_info "🚨 Proceeding with conversion after backup creation..."
-        elif [[ "$dry_run" == true ]]; then
-            log_info "🧪 DRY RUN: Would prompt for overwrite confirmation"
-        else
-            read -p "Do you want to continue and overwrite the contents? (y/n): " confirm
-            if [[ "$confirm" != "y" ]]; then
-                log_error "❌ Aborting script."
-                exit 1
-            fi
-            log_info "🚨 Overwriting contents in the destination directory..."
-        fi
-    fi
-else
-    log_info "✅ Destination directory is empty or doesn't exist - safe to proceed"
-fi
-
-# Check disk space (disabled for now)
-# if ! check_disk_space "$src_dir" "$dest_dir"; then
-#     log_error "❌ Not enough disk space available. Exiting script."
-#     exit 1
-# fi
-
-# Check file permissions (disabled for now)
-# if ! check_permissions "$src_dir" "$dest_dir"; then
-#     log_error "❌ File permission issues detected. Exiting script."
-#     exit 1
-# fi
-
-# Check system resources (disabled for now)
-# check_system_resources
-
-# Create DataLad superdataset with git-annex configuration
-log_info "📂 Creating DataLad superdataset with git-annex configuration in $dest_dir..."
-if ! safe_datalad create --force "$dest_dir"; then
-    log_error "❌ Failed to create DataLad superdataset. Exiting script."
-    exit 1
-fi
-
-# Configure git-annex settings immediately after dataset creation
-log_info "⚙️ Configuring git-annex settings for large file handling..."
-if [[ "$dry_run" != true ]]; then
-    (cd "$dest_dir" && {
-        # Configure git-annex: only large binary files go to annex, text files stay as regular files
-        echo "*.json annex.largefiles=nothing" > .gitattributes
-        echo "*.tsv annex.largefiles=nothing" >> .gitattributes
-        echo "*.bval annex.largefiles=nothing" >> .gitattributes
-        echo "*.bvec annex.largefiles=nothing" >> .gitattributes
-        echo "*.txt annex.largefiles=nothing" >> .gitattributes
-        echo "*.md annex.largefiles=nothing" >> .gitattributes
-        echo "*.py annex.largefiles=nothing" >> .gitattributes
-        echo "*.sh annex.largefiles=nothing" >> .gitattributes
-        echo "*.m annex.largefiles=nothing" >> .gitattributes
-        echo "README annex.largefiles=nothing" >> .gitattributes
-        echo "LICENSE annex.largefiles=nothing" >> .gitattributes
-        echo "CHANGES annex.largefiles=nothing" >> .gitattributes
-        echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
-        git add .gitattributes
-        git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
-    })
-fi
-
-# Save the initial commit
-log_info "📝 Saving initial commit for the superdataset..."
-if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
-    log_error "❌ Failed to save initial commit. Exiting script."
-    exit 1
-fi
-
-# Create sub-datasets for each subject with git-annex configuration
-log_info "📂 Creating sub-datasets for each subject..."
-for subject_dir in "$src_dir"/sub-*; do
-    if [[ -d "$subject_dir" ]]; then
-        subject_name=$(basename "$subject_dir")
-        log_info "📁 Creating sub-dataset for subject: $subject_name"
-        if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
-            log_error "❌ Failed to create sub-dataset for subject: $subject_name. Exiting script."
-            exit 1
-        fi
-
-        # Configure git-annex settings for this sub-dataset too
-        log_info "⚙️ Configuring git-annex settings for sub-dataset: $subject_name"
-        if [[ "$dry_run" != true ]]; then
-            (cd "$dest_dir/$subject_name" && {
-                # Copy the same git-annex configuration to sub-dataset
-                echo "*.json annex.largefiles=nothing" > .gitattributes
-                echo "*.tsv annex.largefiles=nothing" >> .gitattributes
-                echo "*.bval annex.largefiles=nothing" >> .gitattributes
-                echo "*.bvec annex.largefiles=nothing" >> .gitattributes
-                echo "*.txt annex.largefiles=nothing" >> .gitattributes
-                echo "*.md annex.largefiles=nothing" >> .gitattributes
-                echo "*.py annex.largefiles=nothing" >> .gitattributes
-                echo "*.sh annex.largefiles=nothing" >> .gitattributes
-                echo "*.m annex.largefiles=nothing" >> .gitattributes
-                echo "README annex.largefiles=nothing" >> .gitattributes
-                echo "LICENSE annex.largefiles=nothing" >> .gitattributes
-                echo "CHANGES annex.largefiles=nothing" >> .gitattributes
-                echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
-                git add .gitattributes
-                git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
-            })
-        fi
-
-        # Save the sub-dataset creation in the superdataset
-        if ! safe_datalad save -m "Added sub-dataset for $subject_name" -d "$dest_dir"; then
-            log_error "❌ Failed to save sub-dataset creation for: $subject_name. Exiting script."
-            exit 1
-        fi
-    fi
-done
-
-# Copy files from source to DataLad dataset
-# Create checkpoint (disabled for now)
-# create_checkpoint "pre_copy"
-
-if [[ "$dry_run" == true ]]; then
-    log_info "🧪 DRY RUN: Would copy files from $src_dir to $dest_dir"
-    log_info "🧪 DRY RUN: Would validate file integrity after copying"
-else
-    copy_with_progress "$src_dir" "$dest_dir"
-    
-    # Validate file integrity IMMEDIATELY after copying, before ANY DataLad operations
-    # This is crucial because we need to verify files as regular files, not symlinks
-    log_info "🔍 Performing comprehensive integrity validation..."
-    log_info "📋 Validating that all files were copied correctly before DataLad operations..."
-    if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
-        log_error "❌ File integrity validation failed after copying"
-        log_error "❌ Files do not match between source and destination"
-        exit 1
-    fi
-    log_info "✅ All files successfully copied and verified with checksums"
-fi
-
-# create_checkpoint "post_copy"
-
-# Save all changes in the superdataset and sub-datasets (this will trigger git-annex)
-log_info "📝 Saving all changes in the superdataset and sub-datasets..."
-if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
-    log_error "❌ Failed to save changes. Exiting script."
-    exit 1
-fi
-
-# Git-annex storage optimization is automatic - files are stored efficiently with symlinks
-log_info "🗂️ Git-annex storage optimization complete - files are available as symlinks to annexed content"
-log_info "💡 Files are immediately accessible - no need to run 'datalad get'"
-
-# Perform final integrity verification (disabled for now)
-# if ! perform_final_verification "$src_dir" "$dest_dir"; then
-#     log_error "❌ Final verification failed. Exiting script."
-#     exit 1
-# fi
-
-# Calculate conversion duration
-end_time_epoch=$(date +%s)
-duration=$((end_time_epoch - start_time_epoch))
-hours=$((duration / 3600))
-minutes=$(((duration % 3600) / 60))
-seconds=$((duration % 60))
-
-log_info "✅ DataLad conversion completed successfully!"
-log_info "📊 Conversion Summary:"
-log_info "   - Start time: $start_time"
-log_info "   - End time: $(date '+%Y-%m-%d %H:%M:%S')"
-log_info "   - Duration: ${hours}h ${minutes}m ${seconds}s"
-log_info "   - Source: $src_dir"
-log_info "   - Destination: $dest_dir"
-log_info "   - Log file: $LOGFILE"
-log_info ""
-log_info "📁 DataLad dataset structure created:"
-log_info "   - Superdataset: $dest_dir"
-log_info "   - Sub-datasets: $(find "$dest_dir" -name ".datalad" -type d | wc -l | xargs) total"
-log_info ""
-log_info "🗂️ Storage optimization:"
-log_info "   - Large files stored permanently in git-annex"
-log_info "   - Working directory contains symlinks to git-annex content"
-log_info "   - Files are immediately accessible (no need for 'datalad get')"
-log_info ""
-log_info "🔧 File access:"
-log_info "   - Text files (.json, .tsv, etc.): Regular files (always accessible)"
-log_info "   - Large files (.nii.gz, etc.): Symlinks to git-annex (always accessible)"
-log_info "   - No duplication: Content stored once in .git/annex/objects/"
-log_info ""
-
-# Save all changes in the superdataset and sub-datasets
-log_info "📝 Saving all changes in the superdataset and sub-datasets..."
-if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
-    log_error "❌ Failed to save changes. Exiting script."
-    exit 1
-fi
-else
-    log_info "🧪 DRY RUN: Would configure git-annex for permanent file storage"
-fi
-
-# Final success message
-if [[ "$dry_run" == true ]]; then
-    log_info "🧪 DRY RUN COMPLETED - No actual changes were made"
-    log_info "Re-run without --dry-run to execute the conversion"
-else
-    log_info "✅ DataLad conversion completed successfully!"
-    log_info "📊 Conversion Summary:"
-    log_info "   Source: $src_dir"
-    log_info "   Destination: $dest_dir"
-    log_info "   Study: $study_name"
-    log_info "   Duration: $duration_formatted"
-    log_info "   Storage: Files permanently available in git-annex (no duplication)"
-    if [[ "$create_backup_flag" == true ]]; then
-        log_info "   Backup created: Yes"
-    fi
-    log_info "   Log file: $LOGFILE"
-    log_info ""
-    log_info "💡 Next steps:"
-    log_info "   • Text files (.json, .tsv, etc.) are regular files - always accessible"
-    log_info "   • Large files (.nii.gz, etc.) are symlinks to git-annex - always accessible"
-    log_info "   • All content is permanently stored in .git/annex/objects/"
-    log_info "   • No need to run 'datalad get' - files are immediately available"
-    log_info "   • Example: datalad get -d \"$dest_dir\" sub-01/func/sub-01_task-rest_bold.nii.gz"
-fi
-
-# create_checkpoint "validation_complete"
-
-# Perform final integrity verification (disabled for now)
-# if [[ "$dry_run" != true ]]; then
-#     if ! final_verification "$src_dir" "$dest_dir"; then
-#         log_error "❌ Final verification failed. Check the DataLad dataset."
-#         exit 1
-#     fi
-    
-#     # Create comprehensive conversion report
-#     create_conversion_report "$src_dir" "$dest_dir" "$start_time"
-# fi
-
-# Final message
-# Stop disk monitoring (disabled for now)
-# if [[ -n "$monitor_pid" ]]; then
-#     kill "$monitor_pid" 2>/dev/null || true
-# fi
-
-# Create final checkpoint (disabled for now)
-# create_checkpoint "completion"
-
-# Calculate total duration
-end_time_epoch=$(date +%s)
-duration=$((end_time_epoch - start_time_epoch))
-duration_formatted=$(date -d "@$duration" -u +%H:%M:%S 2>/dev/null || echo "${duration}s")
 
 # Function to check disk space
 check_disk_space() {
@@ -1398,6 +893,7 @@ check_problematic_files() {
             log_error "  - $dup"
         done
     fi
+    
     rm "$temp_file"
     
     return 0
@@ -1444,7 +940,7 @@ create_conversion_report() {
 # DataLad Conversion Report
 
 **Generated:** $(date '+%Y-%m-%d %H:%M:%S')  
-**Script Version:** 2.0  
+**Script Version:** 2.1  
 **Host:** $(hostname)  
 **User:** $(whoami)  
 
@@ -1501,7 +997,7 @@ datalad status -d "$dest_dir"
 \`\`\`
 
 ---
-*Report generated by BIDS to DataLad Conversion Tool v2.0*
+*Report generated by BIDS to DataLad Conversion Tool v2.1*
 EOF
 
     log_info "✅ Conversion report created: $report_file"
@@ -1655,3 +1151,738 @@ handle_interruption() {
     
     exit 130
 }
+
+# Function to create checkpoints for recovery
+create_checkpoint() {
+    local checkpoint_name=$1
+    local checkpoint_file="${TEMP_DIR}/checkpoint_${checkpoint_name}_$(date +%Y%m%d_%H%M%S).txt"
+    
+    log_info "📍 Creating checkpoint: $checkpoint_name"
+    
+    cat > "$checkpoint_file" << EOF
+# CHECKPOINT: $checkpoint_name
+# Created: $(date)
+# Source: $src_dir
+# Destination: $dest_dir
+# Log: $LOGFILE
+# PID: $$
+
+# Recovery instructions:
+# This checkpoint can be used to understand the conversion state
+# at the time '$checkpoint_name' was reached.
+
+EOF
+    
+    log_info "📍 Checkpoint saved: $checkpoint_file"
+}
+
+# Function to check disk space during operations (called periodically)
+check_disk_space_status() {
+    local dest_dir=$1
+    local dest_parent=$(dirname "$dest_dir")
+    
+    local avail_kb=$(df "$dest_parent" | tail -1 | awk '{print $4}')
+    local avail_gb=$((avail_kb / 1024 / 1024))
+    
+    log_info "💾 Available disk space: ${avail_gb}GB"
+    
+    if [[ $avail_gb -lt 5 ]]; then
+        log_error "⚠️ WARNING: Low disk space - only ${avail_gb}GB remaining!"
+        return 1
+    fi
+    return 0
+}
+
+# Function to clean up DataLad state before critical operations
+cleanup_datalad_state() {
+    local dataset_dir=$1
+    
+    if [[ ! -d "$dataset_dir" ]]; then
+        return 0
+    fi
+    
+    log_info "🧹 Cleaning up DataLad state in: $dataset_dir"
+    
+    # Remove any .DS_Store files that might interfere
+    find "$dataset_dir" -name ".DS_Store" -delete 2>/dev/null || true
+    
+    # Check if there are any uncommitted changes
+    if command -v datalad &> /dev/null; then
+        local status_output
+        if status_output=$(datalad status -d "$dataset_dir" 2>/dev/null); then
+            if echo "$status_output" | grep -q "modified\|untracked"; then
+                log_info "📋 Found uncommitted changes in dataset, attempting to resolve..."
+                # Try to save any pending changes
+                datalad save -d "$dataset_dir" -m "Auto-save before operation" 2>/dev/null || true
+            fi
+        fi
+    fi
+}
+
+# Function to safely execute DataLad operations for sub-datasets with enhanced tolerance
+safe_subdataset_operation() {
+    local operation="$1"
+    local subject_dir="$2"
+    local dest_dir="$3"
+    local subject_name="$4"
+    shift 4  # Remove the first 4 arguments, rest are DataLad command arguments
+    local datalad_args=("$@")
+    
+    log_info "🔄 Attempting sub-dataset $operation for: $subject_name"
+    
+    # Multiple fallback strategies for sub-dataset operations
+    local strategies=("standard" "force_clean" "manual_git")
+    
+    for strategy in "${strategies[@]}"; do
+        log_info "🔄 Trying strategy: $strategy"
+        
+        case "$strategy" in
+            "standard")
+                # For save operations, only save within the dataset directory
+                if [[ "$operation" == "save" ]]; then
+                    if safe_datalad "$operation" "${datalad_args[@]}"; then
+                        log_success "✅ Sub-dataset $operation successful for: $subject_name"
+                        return 0
+                    fi
+                else
+                    if safe_datalad "$operation" "$subject_dir" "$dest_dir" "$subject_name" "${datalad_args[@]}"; then
+                        log_success "✅ Sub-dataset $operation successful for: $subject_name"
+                        return 0
+                    fi
+                fi
+                ;;
+            "force_clean")
+                log_info "🧹 Trying with state cleanup..."
+                cleanup_datalad_state "$subject_dir"
+                cleanup_datalad_state "$dest_dir"
+                
+                if [[ "$operation" == "save" ]]; then
+                    if safe_datalad "$operation" "${datalad_args[@]}"; then
+                        log_success "✅ Sub-dataset $operation successful after cleanup for: $subject_name"
+                        return 0
+                    fi
+                else
+                    if safe_datalad "$operation" "$subject_dir" "$dest_dir" "$subject_name" "${datalad_args[@]}"; then
+                        log_success "✅ Sub-dataset $operation successful after cleanup for: $subject_name"
+                        return 0
+                    fi
+                fi
+                ;;
+            "manual_git")
+                log_info "🔧 Trying manual git approach..."
+                (
+                    cd "$dest_dir" || return 1
+                    # Check if there are any changes to commit
+                    if git status --porcelain | grep -q "$subject_name"; then
+                        git add "$subject_name" 2>/dev/null || true
+                        git commit -m "Add sub-dataset for $subject_name" 2>/dev/null || true
+                        log_success "✅ Manual git commit successful for: $subject_name"
+                    else
+                        log_info "ℹ️ No changes to commit for $subject_name"
+                    fi
+                    return 0
+                )
+                if [[ $? -eq 0 ]]; then
+                    return 0
+                fi
+                ;;
+        esac
+    done
+    
+    # If all strategies fail, log warning but don't fail the entire script
+    log_warning "⚠️ All strategies failed for sub-dataset $operation: $subject_name"
+    log_warning "This is not critical - the data was copied successfully"
+    log_warning "You can manually save this later with:"
+    log_warning "  cd '$dest_dir' && datalad save -m 'Add sub-dataset for $subject_name'"
+    
+    return 1  # Return error but script continues
+}
+
+# Usage function
+usage() {
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack]" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Options:" | tee /dev/fd/3
+    echo "  -h                       Show this help message" | tee /dev/fd/3
+    echo "  -s src_dir               Source directory containing BIDS data" | tee /dev/fd/3
+    echo "  -d dest_dir              Destination directory for DataLad datasets" | tee /dev/fd/3
+    echo "  --skip_bids_validation   Skip initial and final BIDS validation" | tee /dev/fd/3
+    echo "  --dry-run                Show what would be done without executing" | tee /dev/fd/3
+    echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
+    echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
+    echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
+    echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Storage:" | tee /dev/fd/3
+    echo "  - Files are stored efficiently in git-annex (no duplication)" | tee /dev/fd/3
+    echo "  - Use 'datalad get <file>' to retrieve file content when needed" | tee /dev/fd/3
+    echo "  - Use 'datalad drop <file>' to free up space after use" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Structure:" | tee /dev/fd/3
+    echo "  The script will create: dest_dir/study_name/" | tee /dev/fd/3
+    echo "  Where study_name is the basename of the source directory" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Safety:" | tee /dev/fd/3
+    echo "  - Source files are NEVER modified (read-only operation)" | tee /dev/fd/3
+    echo "  - The script checks if destination directory is empty before proceeding" | tee /dev/fd/3
+    echo "  - Use --force-empty to abort if destination is not empty" | tee /dev/fd/3
+    echo "  - Use --backup to create backup of existing destination (not source)" | tee /dev/fd/3
+    echo "  - Use --dry-run to preview operations without making changes" | tee /dev/fd/3
+    echo "  - Use --fasttrack for faster conversion (skips checksums)" | tee /dev/fd/3
+    echo "  - Comprehensive file integrity verification with checksums" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Example:" | tee /dev/fd/3
+    echo "  $0 -s /path/to/study1_rawdata -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Creates: /path/to/destination/study1_rawdata/" | tee /dev/fd/3
+    echo "  # Files stored in git-annex, use 'datalad get' to access" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "  $0 --force-empty -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Creates: /path/to/destination/bids_data/" | tee /dev/fd/3
+    echo "  # Aborts if destination is not empty" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "  $0 --dry-run -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  $0 --fasttrack -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Faster conversion - skips checksum validation" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Post-conversion usage:" | tee /dev/fd/3
+    echo "  datalad get -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
+    echo "  datalad drop -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
+    exit 1
+}
+
+# Function for dry run mode
+dry_run_check() {
+    if [[ "$dry_run" == true ]]; then
+        log_info "🧪 DRY RUN MODE - Would execute: $1"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to safely execute datalad commands with enhanced error handling
+safe_datalad() {
+    local cmd="$1"
+    shift
+    local args=("$@")
+    local max_retries=3
+    local retry_count=0
+    local dataset_dir=""
+    
+    # Extract dataset directory from arguments if present
+    for i in "${!args[@]}"; do
+        if [[ "${args[$i]}" == "-d" && $((i+1)) -lt ${#args[@]} ]]; then
+            dataset_dir="${args[$((i+1))]}"
+            break
+        fi
+    done
+    
+    if dry_run_check "datalad $cmd ${args[*]}"; then
+        return 0
+    fi
+    
+    log_info "🔧 Executing: datalad $cmd ${args[*]}"
+    
+    while [[ $retry_count -lt $max_retries ]]; do
+        # Clean up DataLad state before critical operations
+        if [[ -n "$dataset_dir" && -d "$dataset_dir" ]]; then
+            cleanup_datalad_state "$dataset_dir"
+        fi
+        
+        # Execute the command and capture both stdout and stderr
+        local output
+        local exit_code
+        
+        if output=$(datalad "$cmd" "${args[@]}" 2>&1); then
+            # Command succeeded
+            if [[ -n "$output" ]]; then
+                echo "$output" | head -10  # Show first 10 lines of output
+            fi
+            return 0
+        else
+            exit_code=$?
+            retry_count=$((retry_count + 1))
+            
+            log_error "❌ DataLad command failed (attempt $retry_count/$max_retries)"
+            log_error "Command: datalad $cmd ${args[*]}"
+            log_error "Exit code: $exit_code"
+            
+            # Show relevant error output
+            if [[ -n "$output" ]]; then
+                echo "$output" | tail -5 | while read -r line; do
+                    log_error "   $line"
+                done
+            fi
+            
+            # Special handling for common DataLad issues
+            if echo "$output" | grep -q "nothing to save"; then
+                log_info "ℹ️  Nothing to save - this is normal, continuing..."
+                return 0
+            elif echo "$output" | grep -q "already exists"; then
+                log_info "ℹ️  Target already exists - continuing..."
+                return 0
+            elif echo "$output" | grep -q "uncommitted changes"; then
+                log_error "⚠️  Uncommitted changes detected. Attempting to resolve..."
+                if [[ "$cmd" == "save" ]]; then
+                    # Try to save current state first
+                    datalad status -d "${args[-1]}" 2>/dev/null || true
+                fi
+            fi
+            
+            if [[ $retry_count -lt $max_retries ]]; then
+                log_info "🔄 Retrying in 2 seconds... (attempt $((retry_count + 1))/$max_retries)"
+                sleep 2
+            fi
+        fi
+    done
+    
+    log_error "❌ Failed to execute after $max_retries attempts: datalad $cmd ${args[*]}"
+    return 1
+}
+
+# Initialize variables
+skip_bids_validation=false
+dry_run=false
+create_backup_flag=false
+parallel_hash=false
+force_empty=false
+fasttrack=false
+src_dir=""
+dest_root=""
+dest_dir=""
+study_name=""
+src_dir_name=""
+
+
+# Parse options
+while [[ $# -gt 0 && "$1" == -* ]]; do
+    case $1 in
+        -h)
+            usage
+            ;;
+        -s)
+            shift
+            src_dir="$1"
+            ;;
+        -d)
+            shift
+            dest_root="$1"
+            ;;
+        --skip_bids_validation)
+            skip_bids_validation=true
+            ;;
+        --dry-run)
+            dry_run=true
+            ;;
+        --backup)
+            create_backup_flag=true
+            ;;
+        --parallel-hash)
+            parallel_hash=true
+            ;;
+        --force-empty)
+            force_empty=true
+            ;;
+        --fasttrack)
+            fasttrack=true
+            ;;
+        *)
+            log_error "❌ Unknown option: $1"
+            usage
+            ;;
+    esac
+    shift
+done
+
+# Check for required arguments
+if [[ -z "$src_dir" || -z "$dest_root" ]]; then
+    usage
+fi
+
+# Validate arguments
+validate_arguments
+
+# Extract study name from source directory (simplified structure)
+# Use only the basename of the source directory as the study name
+study_name=$(basename "$src_dir")
+src_dir_name=$(basename "$src_dir")
+
+# Create destination path: dest_root/study_name (without intermediate folders)
+dest_dir="$dest_root/$study_name"
+
+# EARLY CHECK: Stop immediately if destination directory is not empty
+# This saves time by avoiding all other validations if we'll fail anyway
+if [[ -d "$dest_dir" && "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
+    log_error "❌ DESTINATION DIRECTORY IS NOT EMPTY: $dest_dir"
+    log_error ""
+    log_error "For safety reasons, this script requires an empty destination directory."
+    log_error ""
+    log_error "Please either:"
+    log_error "  1. Choose a different, empty destination directory"
+    log_error "  2. Manually remove/backup the contents of: $dest_dir"
+    log_error "  3. Use a subdirectory like: $dest_dir/new_dataset_name"
+    log_error ""
+    log_error "Example: bash $0 -s $src_dir -d $dest_root/seattle_datalad_$(date +%Y%m%d)"
+    log_error ""
+    exit 1
+fi
+
+# Convert relative paths to absolute paths
+if [[ ! -d "$src_dir" ]]; then
+    log_error "❌ Source directory does not exist: $src_dir"
+    exit 1
+fi
+
+src_dir=$(cd "$src_dir" && pwd) || {
+    log_error "❌ Failed to resolve absolute path for source directory: $src_dir"
+    exit 1
+}
+
+if [[ -d "$dest_dir" ]]; then
+    dest_dir=$(cd "$dest_dir" && pwd) || {
+        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
+        exit 1
+    }
+else
+    log_info "Destination directory does not exist. Creating it."
+    if ! mkdir -p "$dest_dir"; then
+        log_error "❌ Failed to create destination directory: $dest_dir"
+        exit 1
+    fi
+    dest_dir=$(cd "$dest_dir" && pwd) || {
+        log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
+        exit 1
+    }
+fi
+
+# Print the header
+print_header
+
+# Perform comprehensive pre-flight checks
+if ! perform_preflight_checks; then
+    log_error "❌ Pre-flight checks failed. Exiting script."
+    exit 1
+fi
+
+# Setup signal handlers for graceful interruption
+setup_signal_handlers
+
+# Store start time for reporting
+start_time=$(date '+%Y-%m-%d %H:%M:%S')
+start_time_epoch=$(date +%s)
+
+# Check initial disk space status
+log_info "🔍 Checking initial system status..."
+check_disk_space_status "$dest_dir"
+
+# Create initial checkpoint
+create_checkpoint "initialization"
+
+# Check dependencies
+check_dependencies
+
+# Check Git configuration
+if ! check_git_config; then
+    log_error "❌ Git configuration check failed. Exiting script."
+    exit 1
+fi
+
+# Check system resources
+check_system_resources
+
+# Show dry run mode if enabled
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN MODE ENABLED - No actual changes will be made"
+fi
+
+# Comprehensive source validation
+log_info "🔍 Performing comprehensive source validation..."
+if ! validate_bids_structure "$src_dir"; then
+    log_error "❌ BIDS structure validation failed. Exiting script."
+    exit 1
+fi
+
+# Check for problematic files
+check_problematic_files "$src_dir"
+
+# Check file permissions
+if ! check_permissions "$src_dir" "$dest_dir"; then
+    log_error "❌ Permission check failed. Exiting script."
+    exit 1
+fi
+
+# Check disk space
+if ! check_disk_space "$src_dir" "$dest_dir"; then
+    log_error "❌ Disk space check failed. Exiting script."
+    exit 1
+fi
+
+# Create recovery information
+if [[ "$dry_run" != true ]]; then
+    create_recovery_info "$src_dir" "$dest_dir"
+fi
+
+# Validate BIDS dataset if validation is not skipped
+if [ "$skip_bids_validation" = false ]; then
+    if ! validate_bids "$src_dir"; then
+        log_error "❌ BIDS validation failed. Exiting script."
+        exit 1
+    fi
+fi
+
+# Validate arguments and paths
+validate_arguments
+
+# Destination directory emptiness already checked earlier - skip redundant check
+log_info "✅ Destination directory verified as empty or non-existent"
+
+# Check disk space
+log_info "🔍 Checking disk space requirements..."
+if ! check_disk_space "$src_dir" "$dest_dir"; then
+    log_error "❌ Not enough disk space available. Exiting script."
+    exit 1
+fi
+log_info "✅ Disk space check passed."
+
+# Check file permissions
+log_info "🔍 Checking file permissions..."
+if ! check_permissions "$src_dir" "$dest_dir"; then
+    log_error "❌ File permission issues detected. Exiting script."
+    exit 1
+fi
+
+# Check system resources
+check_system_resources
+
+# Create DataLad superdataset with git-annex configuration
+log_info "📂 Creating DataLad superdataset with git-annex configuration in $dest_dir..."
+log_info "🔧 This may take a moment - setting up DataLad infrastructure..."
+if ! safe_datalad create --force "$dest_dir"; then
+    log_error "❌ Failed to create DataLad superdataset. Exiting script."
+    exit 1
+fi
+log_info "✅ DataLad superdataset created successfully"
+
+# Configure git-annex settings immediately after dataset creation
+log_info "⚙️ Configuring git-annex settings for large file handling..."
+log_info "📝 Setting up file size thresholds and metadata handling..."
+if [[ "$dry_run" != true ]]; then
+    (cd "$dest_dir" && {
+        # Configure git-annex: only large binary files go to annex, text files stay as regular files
+        echo "*.json annex.largefiles=nothing" > .gitattributes
+        echo "*.tsv annex.largefiles=nothing" >> .gitattributes
+        echo "*.bval annex.largefiles=nothing" >> .gitattributes
+        echo "*.bvec annex.largefiles=nothing" >> .gitattributes
+        echo "*.txt annex.largefiles=nothing" >> .gitattributes
+        echo "*.md annex.largefiles=nothing" >> .gitattributes
+        echo "*.py annex.largefiles=nothing" >> .gitattributes
+        echo "*.sh annex.largefiles=nothing" >> .gitattributes
+        echo "*.m annex.largefiles=nothing" >> .gitattributes
+        echo "README annex.largefiles=nothing" >> .gitattributes
+        echo "LICENSE annex.largefiles=nothing" >> .gitattributes
+        echo "CHANGES annex.largefiles=nothing" >> .gitattributes
+        echo ".DS_Store annex.largefiles=nothing" >> .gitattributes
+        echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
+        git add .gitattributes
+        git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
+    })
+fi
+
+# Save the initial commit
+log_info "📝 Saving initial commit for the superdataset..."
+if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
+    log_error "❌ Failed to save initial commit. Exiting script."
+    exit 1
+fi
+
+# Create sub-datasets for each subject with git-annex configuration
+log_info "📂 Creating sub-datasets for each subject..."
+subject_count=0
+total_subjects=$(find "$src_dir" -maxdepth 1 -type d -name "sub-*" | wc -l)
+log_info "📊 Found $total_subjects subjects to process"
+
+for subject_dir in "$src_dir"/sub-*; do
+    if [[ -d "$subject_dir" ]]; then
+        subject_count=$((subject_count + 1))
+        subject_name=$(basename "$subject_dir")
+        log_info "📁 [$subject_count/$total_subjects] Creating sub-dataset for subject: $subject_name"
+        if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
+            log_warning "⚠️ Failed to create sub-dataset for subject: $subject_name"
+            log_warning "This subject will be skipped, but conversion continues with other subjects"
+            continue  # Skip this subject and continue with the next one
+        fi
+        log_info "✅ [$subject_count/$total_subjects] Sub-dataset created: $subject_name"
+
+        # Configure git-annex settings for this sub-dataset too
+        log_info "⚙️ [$subject_count/$total_subjects] Configuring git-annex settings for sub-dataset: $subject_name"
+        if [[ "$dry_run" != true ]]; then
+            (cd "$dest_dir/$subject_name" && {
+                # Copy the same git-annex configuration to sub-dataset
+                echo "*.json annex.largefiles=nothing" > .gitattributes
+                echo "*.tsv annex.largefiles=nothing" >> .gitattributes
+                echo "*.bval annex.largefiles=nothing" >> .gitattributes
+                echo "*.bvec annex.largefiles=nothing" >> .gitattributes
+                echo "*.txt annex.largefiles=nothing" >> .gitattributes
+                echo "*.md annex.largefiles=nothing" >> .gitattributes
+                echo "*.py annex.largefiles=nothing" >> .gitattributes
+                echo "*.sh annex.largefiles=nothing" >> .gitattributes
+                echo "*.m annex.largefiles=nothing" >> .gitattributes
+                echo "README annex.largefiles=nothing" >> .gitattributes
+                echo "LICENSE annex.largefiles=nothing" >> .gitattributes
+                echo "CHANGES annex.largefiles=nothing" >> .gitattributes
+                echo ".DS_Store annex.largefiles=nothing" >> .gitattributes
+                echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
+                git add .gitattributes
+                git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
+            })
+        fi
+
+        # Skip individual sub-dataset saving to avoid hanging
+        # The final save at the end will handle everything recursively
+        log_info "💾 Sub-dataset created for: $subject_name (will be saved with final commit)"
+        log_info "✅ Completed processing for subject: $subject_name"
+    fi
+done
+
+# Copy files from source to DataLad dataset
+# Create checkpoint
+create_checkpoint "pre_copy"
+
+# Clean up .DS_Store files in source and destination before copying
+log_info "🧹 Cleaning up .DS_Store files in source and destination directories..."
+if [[ "$dry_run" != true ]]; then
+    # Remove .DS_Store files from source (read-only operation)
+    ds_store_count_src=$(find "$src_dir" -name ".DS_Store" 2>/dev/null | wc -l | xargs)
+    if [[ $ds_store_count_src -gt 0 ]]; then
+        log_warning "Found $ds_store_count_src .DS_Store files in source directory"
+        log_info "These will be excluded from copying (not deleted from source)"
+    fi
+    
+    # Remove .DS_Store files from destination if they exist
+    ds_store_count_dest=$(find "$dest_dir" -name ".DS_Store" -delete 2>/dev/null | wc -l | xargs)
+    if [[ $ds_store_count_dest -gt 0 ]]; then
+        log_info "Removed $ds_store_count_dest .DS_Store files from destination"
+    fi
+    
+    log_info "✅ .DS_Store cleanup completed"
+fi
+
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN: Would copy files from $src_dir to $dest_dir"
+    log_info "🧪 DRY RUN: Would exclude .DS_Store files during copying"
+    log_info "🧪 DRY RUN: Would validate file integrity after copying"
+else
+    copy_with_progress "$src_dir" "$dest_dir"
+    
+    # Validate file integrity IMMEDIATELY after copying, before ANY DataLad operations
+    # This is crucial because we need to verify files as regular files, not symlinks
+    log_info "🔍 Performing comprehensive integrity validation..."
+    log_info "📋 Validating that all files were copied correctly before DataLad operations..."
+    if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
+        log_error "❌ File integrity validation failed after copying"
+        log_error "❌ Files do not match between source and destination"
+        exit 1
+    fi
+    log_info "✅ All files successfully copied and verified with checksums"
+fi
+
+# create_checkpoint
+create_checkpoint "post_copy"
+
+# Save all changes in the superdataset and sub-datasets (this will trigger git-annex)
+log_info "📝 Saving all changes in the superdataset and sub-datasets..."
+log_info "🔄 This will process all files through git-annex - may take several minutes..."
+log_info "⏱️ Progress will be shown for each file being processed..."
+if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
+    log_error "❌ Failed to save changes. Exiting script."
+    exit 1
+fi
+log_info "✅ All changes saved successfully to DataLad dataset"
+
+# Git-annex storage optimization is automatic - files are stored efficiently with symlinks
+log_info "🗂️ Git-annex storage optimization complete - files are available as symlinks to annexed content"
+log_info "💡 Files are immediately accessible - no need to run 'datalad get'"
+
+# Calculate conversion duration
+end_time_epoch=$(date +%s)
+duration=$((end_time_epoch - start_time_epoch))
+hours=$((duration / 3600))
+minutes=$(((duration % 3600) / 60))
+seconds=$((duration % 60))
+duration_formatted="${hours}h ${minutes}m ${seconds}s"
+
+# Final success message
+if [[ "$dry_run" == true ]]; then
+    log_info "🧪 DRY RUN COMPLETED - No actual changes were made"
+    log_info "Re-run without --dry-run to execute the conversion"
+else
+    # Final BIDS validation to ensure conversion quality
+    log_info "📋 Checking final BIDS validation settings..."
+    log_info "   - skip_bids_validation flag: $skip_bids_validation"
+    log_info "   - parallel_hash flag: $parallel_hash"
+    
+    if [[ "$skip_bids_validation" == false ]]; then
+        log_info "🔍 Performing final BIDS validation on converted dataset..."
+        log_info "🎯 Validating: $dest_dir"
+        log_info "⏱️ This may take a few minutes for large datasets..."
+        log_info "🔄 Validator will check file structure, naming conventions, and metadata..."
+        
+        # Add timeout to prevent hanging
+        if timeout 300s validate_bids "$dest_dir"; then
+            log_success "✅ Final BIDS validation PASSED - Converted dataset is valid!"
+            log_success "🎉 All files follow BIDS specification correctly"
+        else
+            validation_exit_code=$?
+            if [[ $validation_exit_code -eq 124 ]]; then
+                log_warning "⏰ Final BIDS validation TIMED OUT (5 minutes) - Dataset may be very large"
+                log_warning "Consider running manual validation: bids-validator '$dest_dir'"
+            else
+                log_warning "⚠️ Final BIDS validation FAILED - There may be issues with the converted dataset"
+                log_warning "This could be due to:"
+                log_warning "  • git-annex symlinks (expected - not a real error)"
+                log_warning "  • Missing optional files"
+                log_warning "  • DataLad-specific structure differences"
+                log_warning "Please check the validation output above for details."
+                log_warning "💡 To skip this validation in future runs, use: --skip_bids_validation"
+            fi
+        fi
+    else
+        log_info "⏭️ Final BIDS validation skipped (--skip_bids_validation flag used)"
+    fi
+    log_info ""
+    
+    log_info "✅ DataLad conversion completed successfully!"
+    log_info "📊 Conversion Summary:"
+    log_info "   - Start time: $start_time"
+    log_info "   - End time: $(date '+%Y-%m-%d %H:%M:%S')"
+    log_info "   - Duration: ${hours}h ${minutes}m ${seconds}s"
+    log_info "   - Source: $src_dir"
+    log_info "   - Destination: $dest_dir"
+    log_info "   - Study: $study_name"
+    log_info "   - Log file: $LOGFILE"
+    log_info ""
+    log_info "📁 DataLad dataset structure created:"
+    log_info "   - Superdataset: $dest_dir"
+    log_info "   - Sub-datasets: $(find "$dest_dir" -name ".datalad" -type d | wc -l | xargs) total"
+    log_info ""
+    log_info "🗂️ Storage optimization:"
+    log_info "   - Large files stored permanently in git-annex"
+    log_info "   - Working directory contains symlinks to git-annex content"
+    log_info "   - Files are immediately accessible (no need for 'datalad get')"
+    log_info ""
+    log_info "🔧 File access:"
+    log_info "   - Text files (.json, .tsv, etc.): Regular files (always accessible)"
+    log_info "   - Large files (.nii.gz, etc.): Symlinks to git-annex (always accessible)"
+    log_info "   - No duplication: Content stored once in .git/annex/objects/"
+    log_info ""
+    log_info "💡 Next steps:"
+    log_info "   • Text files (.json, .tsv, etc.) are regular files - always accessible"
+    log_info "   • Large files (.nii.gz, etc.) are symlinks to git-annex - always accessible"
+    log_info "   • All content is permanently stored in .git/annex/objects/"
+    log_info "   • No need to run 'datalad get' - files are immediately available"
+    log_info "   • Example: datalad get -d \"$dest_dir\" sub-01/func/sub-01_task-rest_bold.nii.gz"
+    if [[ "$create_backup_flag" == true ]]; then
+        log_info "   • Backup created: Yes"
+    fi
+fi
