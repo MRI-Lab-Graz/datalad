@@ -935,129 +935,37 @@ if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_
     exit 1
 fi
 
-# Function to validate enhanced integrity (accounting for git-annex storage)
-validate_integrity_enhanced() {
-    local src_dir=$1
-    local dest_dir=$2
-    
-    log_info "🔍 Performing comprehensive integrity validation..."
-    
-    # Only compare BIDS files, not DataLad metadata
-    local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    # For initial validation, count regular files before git-annex conversion
-    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    
-    log_info "Source BIDS files: $src_count"
-    log_info "Destination BIDS files: $dest_count"
-    
-    if [[ $src_count -ne $dest_count ]]; then
-        log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
-        return 1
-    fi
-    
-    # Perform thorough file integrity check using checksums
-    log_info "🔍 Performing thorough file integrity verification..."
-    log_info "This may take a while depending on dataset size..."
-    local failed_files=0
-    local temp_file=$(mktemp)
-    
-    # Get all BIDS files from source
-    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
-    local total_files=$(wc -l < "$temp_file")
-    local current_file=0
-    
-    log_info "Verifying $total_files BIDS files..."
-    
-    while IFS= read -r src_file; do
-        current_file=$((current_file + 1))
-        
-        # Show progress every 10 files
-        if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
-            show_progress $current_file $total_files
-        fi
-        
-        # Construct corresponding destination file path
-        local dest_file="${src_file/$src_dir/$dest_dir}"
-        
-        # Check if file exists in destination
-        if [[ ! -f "$dest_file" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ File missing in destination: $dest_file"
-            failed_files=$((failed_files + 1))
-            continue
-        fi
-        
-        # Compare checksums
-        local src_hash=$(compute_hash "$src_file")
-        local dest_hash=$(compute_hash "$dest_file")
-        
-        if [[ "$src_hash" != "$dest_hash" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ Checksum mismatch for: $(basename "$src_file")"
-            log_error "   Source: $src_hash"
-            log_error "   Destination: $dest_hash"
-            failed_files=$((failed_files + 1))
-        fi
-    done < "$temp_file"
-    
-    # Clear progress line and show completion
-    echo ""
-    rm "$temp_file"
-    
-    if [[ $failed_files -gt 0 ]]; then
-        log_error "❌ $failed_files files failed integrity validation"
-        return 1
-    else
-        log_info "✅ All $total_files files passed integrity verification"
-    fi
-    
-    # Check if essential BIDS files exist in destination
-    if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
-        log_error "❌ dataset_description.json missing in destination"
-        return 1
-    fi
-    
-    # Verify subject directories
-    local src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
-    local dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
-    
-    if [[ $src_subjects -ne $dest_subjects ]]; then
-        log_error "❌ Subject directory count mismatch: source=$src_subjects, destination=$dest_subjects"
-        return 1
-    fi
-    
-    log_info "✅ Comprehensive integrity validation passed"
-    log_info "✅ All $src_count BIDS files successfully verified with checksums"
-    log_info "✅ All $src_subjects subject directories created"
-    
-    return 0
-}
-
-# Validate file integrity before git-annex conversion
+# Validate file integrity after copying but before git-annex conversion
+# This is crucial because once files are converted to git-annex, they become symlinks
 if [[ "$dry_run" == true ]]; then
-    log_info "🧪 DRY RUN: Would validate file integrity before git-annex conversion"
+    log_info "🧪 DRY RUN: Would validate file integrity after copying"
 else
+    log_info "🔍 Performing comprehensive integrity validation..."
+    log_info "📋 Validating that all files were copied correctly before git-annex conversion..."
     if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
-        log_error "❌ File integrity validation failed before git-annex conversion"
+        log_error "❌ File integrity validation failed after copying"
+        log_error "❌ Files do not match between source and destination"
         exit 1
     fi
+    log_info "✅ All files successfully copied and verified with checksums"
 fi
 
 # Configure git-annex to optimize storage and drop file content
-log_info "🗂️  Configuring git-annex for optimized storage..."
+log_info "🗂️ Configuring git-annex for optimized storage..."
 if [[ "$dry_run" != true ]]; then
     # Change to the dataset directory for git-annex operations
     (cd "$dest_dir" && {
-        # Configure git-annex settings for better performance
-        git config annex.largefiles "largerthan=100kb"
+        # Configure git-annex for large files
+        log_info "⚙️ Configuring git-annex for large file handling..."
         
-        # Initialize git-annex if not already initialized
-        if ! git annex version &>/dev/null; then
-            git annex init
-        fi
+        # Set up git-annex to handle large files automatically
+        echo "* annex.largefiles=(largerthan=1MB)" > .gitattributes
+        git add .gitattributes
+        git commit -m "Configure git-annex for large files" || true
         
-        # Configure git-annex to handle large files
-        git config annex.addsmallfiles false
+        # Add all files to git-annex
+        git annex add . || log_error "⚠️ Some files may not have been added to git-annex"
+        git commit -m "Add files to git-annex" || true
     })
     
     # Drop file content from working directory (keeping only symlinks)
@@ -1573,3 +1481,101 @@ handle_interruption() {
 }
 
 # End of script - all functions are defined above
+
+# Function to validate enhanced integrity (accounting for git-annex storage)
+validate_integrity_enhanced() {
+    local src_dir=$1
+    local dest_dir=$2
+    
+    log_info "🔍 Performing comprehensive integrity validation..."
+    
+    # Only compare BIDS files, not DataLad metadata
+    local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    # For initial validation, count regular files before git-annex conversion
+    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    
+    log_info "Source BIDS files: $src_count"
+    log_info "Destination BIDS files: $dest_count"
+    
+    if [[ $src_count -ne $dest_count ]]; then
+        log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
+        return 1
+    fi
+    
+    # Perform thorough file integrity check using checksums
+    log_info "🔍 Performing thorough file integrity verification..."
+    log_info "This may take a while depending on dataset size..."
+    local failed_files=0
+    local temp_file=$(mktemp)
+    
+    # Get all BIDS files from source
+    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
+    local total_files=$(wc -l < "$temp_file")
+    local current_file=0
+    
+    log_info "Verifying $total_files BIDS files..."
+    
+    while IFS= read -r src_file; do
+        current_file=$((current_file + 1))
+        
+        # Show progress every 10 files or if dataset is small
+        if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
+            show_progress $current_file $total_files
+        fi
+        
+        # Construct corresponding destination file path
+        local dest_file="${src_file/$src_dir/$dest_dir}"
+        
+        # Check if file exists in destination
+        if [[ ! -f "$dest_file" ]]; then
+            echo "" # Clear progress line before error
+            log_error "❌ File missing in destination: $dest_file"
+            failed_files=$((failed_files + 1))
+            continue
+        fi
+        
+        # Compare checksums
+        local src_hash=$(compute_hash "$src_file")
+        local dest_hash=$(compute_hash "$dest_file")
+        
+        if [[ "$src_hash" != "$dest_hash" ]]; then
+            echo "" # Clear progress line before error
+            log_error "❌ Checksum mismatch for: $(basename "$src_file")"
+            log_error "   Source: $src_hash"
+            log_error "   Destination: $dest_hash"
+            failed_files=$((failed_files + 1))
+        fi
+    done < "$temp_file"
+    
+    # Clear progress line and show completion
+    echo ""
+    rm "$temp_file"
+    
+    if [[ $failed_files -gt 0 ]]; then
+        log_error "❌ $failed_files files failed integrity validation"
+        return 1
+    else
+        log_info "✅ All $total_files files passed integrity verification"
+    fi
+    
+    # Check if essential BIDS files exist in destination
+    if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
+        log_error "❌ dataset_description.json missing in destination"
+        return 1
+    fi
+    
+    # Verify subject directories
+    local src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    local dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    
+    if [[ $src_subjects -ne $dest_subjects ]]; then
+        log_error "❌ Subject directory count mismatch: source=$src_subjects, destination=$dest_subjects"
+        return 1
+    fi
+    
+    log_info "✅ Comprehensive integrity validation passed"
+    log_info "✅ All $src_count BIDS files successfully verified with checksums"
+    log_info "✅ All $src_subjects subject directories created"
+    
+    return 0
+}
