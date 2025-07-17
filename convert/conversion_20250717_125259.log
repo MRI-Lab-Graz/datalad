@@ -1,0 +1,24 @@
+[1;34m
+------------------------------------------------
+                   MRI - LAB GRAZ
+------------------------------------------------
+[0m
+                        Date: 2025-07-17
+                        Time: 12:52:59
+---------------------------------------------------
+2025-07-17 12:52:59 - INFO - ✅ All required dependencies are available.
+2025-07-17 12:52:59 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 12:53:00 - INFO - ✅ BIDS validation completed successfully!
+This dataset appears to be BIDS compatible.
+
+          Summary:                         Available Tasks:        Available Modalities:
+          49 Files, 5.17 GB                symbol                  MRI                  
+          3 - Subjects 1 - Sessions        nonsymbol                                    
+
+	If you have any questions, please post on https://neurostars.org/tags/bids.
+2025-07-17 12:53:00 - INFO - ✅ Destination directory is empty or doesn't exist - safe to proceed
+2025-07-17 12:53:00 - INFO - 📂 Creating DataLad superdataset with git-annex configuration in /Users/karl/work/public_datalad/work/bids2public...
+2025-07-17 12:53:00 - INFO - 🔧 Executing: datalad create -c annex --force /Users/karl/work/public_datalad/work/bids2public
+[ERROR] Cannot find procedure with name 'annex' 
+2025-07-17 12:53:00 - ERROR - ❌ Failed to execute: datalad create -c annex --force /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:53:00 - ERROR - ❌ Failed to create DataLad superdataset. Exiting script.

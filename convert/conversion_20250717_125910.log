@@ -1,0 +1,26 @@
+[1;34m
+------------------------------------------------
+                   MRI - LAB GRAZ
+------------------------------------------------
+[0m
+                        Date: 2025-07-17
+                        Time: 12:59:10
+---------------------------------------------------
+2025-07-17 12:59:10 - INFO - ✅ All required dependencies are available.
+2025-07-17 12:59:10 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 12:59:10 - INFO - ✅ BIDS validation completed successfully!
+This dataset appears to be BIDS compatible.
+
+          Summary:                         Available Tasks:        Available Modalities:
+          49 Files, 5.17 GB                symbol                  MRI                  
+          3 - Subjects 1 - Sessions        nonsymbol                                    
+
+	If you have any questions, please post on https://neurostars.org/tags/bids.
+2025-07-17 12:59:10 - ERROR - ⚠️ Destination directory is not empty: /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:59:10 - ERROR - 🚨 WARNING: Destination contains an existing DataLad dataset!
+2025-07-17 12:59:10 - ERROR - This could lead to conflicts or data loss.
+Available options:
+1. Abort and choose a different destination
+2. Create backup and continue (recommended)
+3. Continue without backup (DANGEROUS)
+Choose option (1/2/3): 

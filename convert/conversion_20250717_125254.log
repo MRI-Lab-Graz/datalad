@@ -1,0 +1,43 @@
+2025-07-17 12:52:54 - INFO - Destination directory does not exist. Creating it.
+[1;34m
+------------------------------------------------
+                   MRI - LAB GRAZ
+------------------------------------------------
+[0m
+                        Date: 2025-07-17
+                        Time: 12:52:54
+---------------------------------------------------
+2025-07-17 12:52:54 - INFO - ✅ All required dependencies are available.
+2025-07-17 12:52:54 - INFO - 🧪 DRY RUN MODE ENABLED - No actual changes will be made
+2025-07-17 12:52:54 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 12:52:55 - INFO - ✅ BIDS validation completed successfully!
+This dataset appears to be BIDS compatible.
+
+          Summary:                         Available Tasks:        Available Modalities:
+          49 Files, 5.17 GB                symbol                  MRI                  
+          3 - Subjects 1 - Sessions        nonsymbol                                    
+
+	If you have any questions, please post on https://neurostars.org/tags/bids.
+2025-07-17 12:52:55 - INFO - ✅ Destination directory is empty or doesn't exist - safe to proceed
+2025-07-17 12:52:55 - INFO - 📂 Creating DataLad superdataset with git-annex configuration in /Users/karl/work/public_datalad/work/bids2public...
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad create -c annex --force /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 📝 Saving initial commit for the superdataset...
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad save -m Initial commit -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 📂 Creating sub-datasets for each subject...
+2025-07-17 12:52:55 - INFO - 📁 Creating sub-dataset for subject: sub-MQUAOJ
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad create -c annex -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-MQUAOJ
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad save -m Added sub-dataset for sub-MQUAOJ -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 📁 Creating sub-dataset for subject: sub-W7DKJ1
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad create -c annex -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-W7DKJ1
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad save -m Added sub-dataset for sub-W7DKJ1 -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 📁 Creating sub-dataset for subject: sub-XZBSLO
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad create -c annex -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-XZBSLO
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad save -m Added sub-dataset for sub-XZBSLO -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN: Would copy files from /Users/karl/work/bids2public to /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:52:55 - INFO - 📝 Saving all changes in the superdataset and sub-datasets...
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN MODE - Would execute: datalad save -m Copied BIDS data and created sub-datasets -d /Users/karl/work/public_datalad/work/bids2public -r
+2025-07-17 12:52:55 - INFO - 🗂️  Configuring git-annex for optimized storage...
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN: Would configure git-annex and drop file content
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN: Would validate integrity between source and destination
+2025-07-17 12:52:55 - INFO - 🧪 DRY RUN COMPLETED - No actual changes were made
+2025-07-17 12:52:55 - INFO - Re-run without --dry-run to execute the conversion

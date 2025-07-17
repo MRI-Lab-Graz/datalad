@@ -1,0 +1,109 @@
+2025-07-17 13:05:27 - INFO - Destination directory does not exist. Creating it.
+[1;34m
+------------------------------------------------
+                   MRI - LAB GRAZ
+------------------------------------------------
+[0m
+                        Date: 2025-07-17
+                        Time: 13:05:27
+---------------------------------------------------
+2025-07-17 13:05:27 - INFO - ✅ All required dependencies are available.
+2025-07-17 13:05:27 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 13:05:28 - INFO - ✅ BIDS validation completed successfully!
+This dataset appears to be BIDS compatible.
+
+          Summary:                         Available Tasks:        Available Modalities:
+          49 Files, 5.17 GB                symbol                  MRI                  
+          3 - Subjects 1 - Sessions        nonsymbol                                    
+
+	If you have any questions, please post on https://neurostars.org/tags/bids.
+2025-07-17 13:05:28 - INFO - ✅ Destination directory is empty or doesn't exist - safe to proceed
+2025-07-17 13:05:28 - INFO - 📂 Creating DataLad superdataset with git-annex configuration in /Users/karl/work/public_datalad/work/bids2public...
+2025-07-17 13:05:28 - INFO - 🔧 Executing: datalad create --force /Users/karl/work/public_datalad/work/bids2public
+create(ok): /Users/karl/work/public_datalad/work/bids2public (dataset)
+2025-07-17 13:05:29 - INFO - 📝 Saving initial commit for the superdataset...
+2025-07-17 13:05:29 - INFO - 🔧 Executing: datalad save -m Initial commit -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 13:05:29 - INFO - 📂 Creating sub-datasets for each subject...
+2025-07-17 13:05:29 - INFO - 📁 Creating sub-dataset for subject: sub-MQUAOJ
+2025-07-17 13:05:29 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-MQUAOJ
+add(ok): sub-MQUAOJ (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-MQUAOJ (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 13:05:30 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-MQUAOJ -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 13:05:31 - INFO - 📁 Creating sub-dataset for subject: sub-W7DKJ1
+2025-07-17 13:05:31 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-W7DKJ1
+add(ok): sub-W7DKJ1 (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-W7DKJ1 (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 13:05:32 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-W7DKJ1 -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 13:05:33 - INFO - 📁 Creating sub-dataset for subject: sub-XZBSLO
+2025-07-17 13:05:33 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-XZBSLO
+add(ok): sub-XZBSLO (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-XZBSLO (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 13:05:34 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-XZBSLO -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 13:05:34 - INFO - 📁 Counting files to copy...
+2025-07-17 13:05:34 - INFO - Found       56 files to copy
+2025-07-17 13:05:34 - INFO - 📁 Copying files from /Users/karl/work/bids2public to /Users/karl/work/public_datalad/work/bids2public...
+Transfer starting: 87 files
+./
+.DS_Store
+           6148 100%   25.17MB/s   00:00:00 (xfer#1, to-check=1/87)
+README
+            394 100%    1.25MB/s   00:00:00 (xfer#2, to-check=2/87)
+dataset_description.json
+           1639 100%    7.78MB/s   00:00:00 (xfer#3, to-check=3/87)
+participants.json
+            780 100%    4.25MB/s   00:00:00 (xfer#4, to-check=4/87)
+participants.tsv
+            144 100%  803.57KB/s   00:00:00 (xfer#5, to-check=5/87)
+sub-MQUAOJ/
+sub-MQUAOJ/.DS_Store
+           6148 100%   19.47MB/s   00:00:00 (xfer#6, to-check=7/87)
+sub-MQUAOJ/ses-1/
+sub-MQUAOJ/ses-1/.DS_Store
+           6148 100%   17.20MB/s   00:00:00 (xfer#7, to-check=9/87)
+sub-MQUAOJ/ses-1/sub-MQUAOJ_ses-1_scans.tsv
+            456 100%    1.72MB/s   00:00:00 (xfer#8, to-check=10/87)
+sub-MQUAOJ/ses-1/anat/
+sub-MQUAOJ/ses-1/anat/sub-MQUAOJ_ses-1_acq-mprage_T1w.json
+           3278 100%   17.37MB/s   00:00:00 (xfer#9, to-check=12/87)
+sub-MQUAOJ/ses-1/anat/sub-MQUAOJ_ses-1_acq-mprage_T1w.nii.gz
+       11067606 100%  212.90MB/s   00:00:00 (xfer#10, to-check=13/87)
+sub-MQUAOJ/ses-1/anat/anat/
+sub-MQUAOJ/ses-1/fmap/
+sub-MQUAOJ/ses-1/fmap/sub-MQUAOJ_ses-1_dir-pa_epi.json
+           5064 100%   19.31MB/s   00:00:00 (xfer#11, to-check=16/87)
+sub-MQUAOJ/ses-1/fmap/sub-MQUAOJ_ses-1_dir-pa_epi.nii.gz
+       13672728 100%  215.44MB/s   00:00:00 (xfer#12, to-check=17/87)
+sub-MQUAOJ/ses-1/fmap/fmap/
+sub-MQUAOJ/ses-1/func/
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_bold.json
+           4636 100%   18.11MB/s   00:00:00 (xfer#13, to-check=20/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_bold.nii.gz
+       89817088  10%  143.89MB/s   00:00:05      131301376  15%   79.12MB/s   00:00:08      170917888  20%   75.22MB/s   00:00:08      219578368  26%   92.69MB/s   00:00:06      273711104  32%  103.23MB/s   00:00:05      312213504  36%   73.43MB/s   00:00:07      357990400  42%   86.45MB/s   00:00:05      400162816  47%   80.19MB/s   00:00:05      444497920  52%   83.69MB/s   00:00:04      485982208  57%   79.11MB/s   00:00:04      533168128  62%   89.88MB/s   00:00:03      578584576  67%   86.06MB/s   00:00:03      625082368  73%   86.67MB/s   00:00:02      673742848  79%   91.06MB/s   00:00:01      727646208  85%  102.80MB/s   00:00:01rsync(42819): error: sub-MQUAOJ/ses-1/func/.sub-MQUAOJ_ses-1_task-nonsymbol_bold.nii.gz.rKTr7gerRR: write: No space left on device
+rsync(42819): error: buf_copy
+rsync(42819): error: sub-MQUAOJ/ses-1/func/.sub-MQUAOJ_ses-1_task-nonsymbol_bold.nii.gz.rKTr7gerRR: write: No space left on device
+rsync(42819): error: rsync_downloader
+rsync(42819): error: rsync_receiver
+rsync(42818): error: unexpected end of file
+rsync(42818): error: io_read_nonblocking
+rsync(42818): error: io_read_blocking
+rsync(42818): error: io_read_flush
+rsync(42818): error: rsync_sender
+rsync(42818): warning: child 42819 exited with status 1

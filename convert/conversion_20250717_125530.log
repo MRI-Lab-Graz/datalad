@@ -1,0 +1,118 @@
+[1;34m
+------------------------------------------------
+                   MRI - LAB GRAZ
+------------------------------------------------
+[0m
+                        Date: 2025-07-17
+                        Time: 12:55:30
+---------------------------------------------------
+2025-07-17 12:55:30 - INFO - ✅ All required dependencies are available.
+2025-07-17 12:55:30 - INFO - 🚀 Running BIDS Validator...
+2025-07-17 12:55:30 - INFO - ✅ BIDS validation completed successfully!
+This dataset appears to be BIDS compatible.
+
+          Summary:                         Available Tasks:        Available Modalities:
+          49 Files, 5.17 GB                symbol                  MRI                  
+          3 - Subjects 1 - Sessions        nonsymbol                                    
+
+	If you have any questions, please post on https://neurostars.org/tags/bids.
+2025-07-17 12:55:30 - INFO - ✅ Destination directory is empty or doesn't exist - safe to proceed
+2025-07-17 12:55:30 - INFO - 📂 Creating DataLad superdataset with git-annex configuration in /Users/karl/work/public_datalad/work/bids2public...
+2025-07-17 12:55:30 - INFO - 🔧 Executing: datalad create --force /Users/karl/work/public_datalad/work/bids2public
+create(ok): /Users/karl/work/public_datalad/work/bids2public (dataset)
+2025-07-17 12:55:32 - INFO - 📝 Saving initial commit for the superdataset...
+2025-07-17 12:55:32 - INFO - 🔧 Executing: datalad save -m Initial commit -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:55:33 - INFO - 📂 Creating sub-datasets for each subject...
+2025-07-17 12:55:33 - INFO - 📁 Creating sub-dataset for subject: sub-MQUAOJ
+2025-07-17 12:55:33 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-MQUAOJ
+add(ok): sub-MQUAOJ (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-MQUAOJ (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 12:55:34 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-MQUAOJ -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:55:34 - INFO - 📁 Creating sub-dataset for subject: sub-W7DKJ1
+2025-07-17 12:55:34 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-W7DKJ1
+add(ok): sub-W7DKJ1 (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-W7DKJ1 (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 12:55:36 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-W7DKJ1 -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:55:36 - INFO - 📁 Creating sub-dataset for subject: sub-XZBSLO
+2025-07-17 12:55:36 - INFO - 🔧 Executing: datalad create -d /Users/karl/work/public_datalad/work/bids2public /Users/karl/work/public_datalad/work/bids2public/sub-XZBSLO
+add(ok): sub-XZBSLO (dataset)
+add(ok): .gitmodules (file)
+save(ok): . (dataset)
+create(ok): sub-XZBSLO (dataset)
+action summary:
+  add (ok: 2)
+  create (ok: 1)
+  save (ok: 1)
+2025-07-17 12:55:38 - INFO - 🔧 Executing: datalad save -m Added sub-dataset for sub-XZBSLO -d /Users/karl/work/public_datalad/work/bids2public
+2025-07-17 12:55:38 - INFO - 📁 Counting files to copy...
+2025-07-17 12:55:38 - INFO - Found       56 files to copy
+2025-07-17 12:55:38 - INFO - 📁 Copying files from /Users/karl/work/bids2public to /Users/karl/work/public_datalad/work/bids2public...
+Transfer starting: 87 files
+./
+.DS_Store
+           6148 100%   26.79MB/s   00:00:00 (xfer#1, to-check=1/87)
+README
+            394 100%    1.20MB/s   00:00:00 (xfer#2, to-check=2/87)
+dataset_description.json
+           1639 100%    9.42MB/s   00:00:00 (xfer#3, to-check=3/87)
+participants.json
+            780 100%    5.06MB/s   00:00:00 (xfer#4, to-check=4/87)
+participants.tsv
+            144 100%  900.49KB/s   00:00:00 (xfer#5, to-check=5/87)
+sub-MQUAOJ/
+sub-MQUAOJ/.DS_Store
+           6148 100%   17.94MB/s   00:00:00 (xfer#6, to-check=7/87)
+sub-MQUAOJ/ses-1/
+sub-MQUAOJ/ses-1/.DS_Store
+           6148 100%   21.86MB/s   00:00:00 (xfer#7, to-check=9/87)
+sub-MQUAOJ/ses-1/sub-MQUAOJ_ses-1_scans.tsv
+            456 100%    2.17MB/s   00:00:00 (xfer#8, to-check=10/87)
+sub-MQUAOJ/ses-1/anat/
+sub-MQUAOJ/ses-1/anat/sub-MQUAOJ_ses-1_acq-mprage_T1w.json
+           3278 100%   22.65MB/s   00:00:00 (xfer#9, to-check=12/87)
+sub-MQUAOJ/ses-1/anat/sub-MQUAOJ_ses-1_acq-mprage_T1w.nii.gz
+       11067606 100%  235.51MB/s   00:00:00 (xfer#10, to-check=13/87)
+sub-MQUAOJ/ses-1/anat/anat/
+sub-MQUAOJ/ses-1/fmap/
+sub-MQUAOJ/ses-1/fmap/sub-MQUAOJ_ses-1_dir-pa_epi.json
+           5064 100%   64.30MB/s   00:00:00 (xfer#11, to-check=16/87)
+sub-MQUAOJ/ses-1/fmap/sub-MQUAOJ_ses-1_dir-pa_epi.nii.gz
+       13672728 100%  218.14MB/s   00:00:00 (xfer#12, to-check=17/87)
+sub-MQUAOJ/ses-1/fmap/fmap/
+sub-MQUAOJ/ses-1/func/
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_bold.json
+           4636 100%   16.37MB/s   00:00:00 (xfer#13, to-check=20/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_bold.nii.gz
+       74678272   9%  141.79MB/s   00:00:05      159023104  19%  159.73MB/s   00:00:04      234946560  27%  144.79MB/s   00:00:04      325550080  38%  172.08MB/s   00:00:02      413401088  48%  167.49MB/s   00:00:02      487129088  57%  140.56MB/s   00:00:02      580747264  68%  177.73MB/s   00:00:01      644153344  75%  120.92MB/s   00:00:01      731840512  85%  167.23MB/s   00:00:00      802324480  94%  134.42MB/s   00:00:00      857391084 100%  129.28MB/s   00:00:06 (xfer#14, to-check=21/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_events.tsv
+          29921 100%   79.00MB/s   00:00:00 (xfer#15, to-check=22/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_sbref.json
+           4250 100%   21.79MB/s   00:00:00 (xfer#16, to-check=23/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-nonsymbol_sbref.nii.gz
+        1462844 100%  174.43MB/s   00:00:00 (xfer#17, to-check=24/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-symbol_bold.json
+           4251 100%   22.29MB/s   00:00:00 (xfer#18, to-check=25/87)
+sub-MQUAOJ/ses-1/func/sub-MQUAOJ_ses-1_task-symbol_bold.nii.gz
+       80084992  10%  151.70MB/s   00:00:04      170917888  22%  172.06MB/s   00:00:03      223903744  29%  100.21MB/s   00:00:05      281640960  36%  110.07MB/s   00:00:04      338001920  44%  107.50MB/s   00:00:03      388268032  50%   95.35MB/s   00:00:03      439091200  57%   96.60MB/s   00:00:03      482410496  62%   82.50MB/s   00:00:03      519471104  67%   70.68MB/s   00:00:03      570228736  74%   96.80MB/s   00:00:02      617512960  80%   90.11MB/s   00:00:01      672301056  87%  104.47MB/s   00:00:00      721321984  93%   92.34MB/s   00:00:00rsync(33930): error: sub-MQUAOJ/ses-1/func/.sub-MQUAOJ_ses-1_task-symbol_bold.nii.gz.22eecxQeYW: write: No space left on device
+rsync(33930): error: buf_copy
+rsync(33930): error: sub-MQUAOJ/ses-1/func/.sub-MQUAOJ_ses-1_task-symbol_bold.nii.gz.22eecxQeYW: write: No space left on device
+rsync(33930): error: rsync_downloader
+rsync(33930): error: rsync_receiver
+rsync(33929): error: unexpected end of file
+rsync(33929): error: io_read_nonblocking
+rsync(33929): error: io_read_blocking
+rsync(33929): error: io_read_flush
+rsync(33929): error: rsync_sender
+rsync(33929): warning: child 33930 exited with status 1

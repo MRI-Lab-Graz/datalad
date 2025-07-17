@@ -1,0 +1,42 @@
+Usage: bids2datalad.sh [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty]
+
+Options:
+  -h                       Show this help message
+  -s src_dir               Source directory containing BIDS data
+  -d dest_dir              Destination directory for DataLad datasets
+  --skip_bids_validation   Skip BIDS validation
+  --dry-run                Show what would be done without executing
+  --backup                 Create backup of destination before overwriting
+  --parallel-hash          Use parallel processing for hash calculation
+  --force-empty            Require destination directory to be empty (safety mode)
+
+Storage:
+  - Files are stored efficiently in git-annex (no duplication)
+  - Use 'datalad get <file>' to retrieve file content when needed
+  - Use 'datalad drop <file>' to free up space after use
+
+Structure:
+  The script will create: dest_dir/study_name/source_dir_name/
+  Where study_name is derived from the parent directory of src_dir
+  And source_dir_name is the actual name of the source directory
+
+Safety:
+  - The script checks if destination directory is empty before proceeding
+  - Use --force-empty to abort if destination is not empty
+  - Use --backup to automatically create backups
+  - Use --dry-run to preview operations without making changes
+
+Example:
+  bids2datalad.sh -s /path/to/study1/rawdata -d /path/to/destination
+  # Creates: /path/to/destination/study1/rawdata/
+  # Files stored in git-annex, use 'datalad get' to access
+
+  bids2datalad.sh --force-empty -s /path/to/study2/bids_data -d /path/to/destination
+  # Aborts if destination is not empty
+
+  bids2datalad.sh --dry-run -s /path/to/bids_data -d /path/to/destination
+  bids2datalad.sh --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination
+
+Post-conversion usage:
+  datalad get -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz
+  datalad drop -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz
