@@ -559,6 +559,11 @@ usage() {
     echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
     echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
+    echo "Storage:" | tee /dev/fd/3
+    echo "  - Files are stored efficiently in git-annex (no duplication)" | tee /dev/fd/3
+    echo "  - Use 'datalad get <file>' to retrieve file content when needed" | tee /dev/fd/3
+    echo "  - Use 'datalad drop <file>' to free up space after use" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
     echo "Structure:" | tee /dev/fd/3
     echo "  The script will create: dest_dir/study_name/source_dir_name/" | tee /dev/fd/3
     echo "  Where study_name is derived from the parent directory of src_dir" | tee /dev/fd/3
@@ -573,12 +578,17 @@ usage() {
     echo "Example:" | tee /dev/fd/3
     echo "  $0 -s /path/to/study1/rawdata -d /path/to/destination" | tee /dev/fd/3
     echo "  # Creates: /path/to/destination/study1/rawdata/" | tee /dev/fd/3
+    echo "  # Files stored in git-annex, use 'datalad get' to access" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "  $0 --force-empty -s /path/to/study2/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Aborts if destination is not empty" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "  $0 --dry-run -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Post-conversion usage:" | tee /dev/fd/3
+    echo "  datalad get -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
+    echo "  datalad drop -d /path/to/destination/study/rawdata sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
     exit 1
 }
 
@@ -871,9 +881,9 @@ fi
 # Check system resources (disabled for now)
 # check_system_resources
 
-# Create DataLad superdataset
-log_info "📂 Creating DataLad superdataset in $dest_dir..."
-if ! safe_datalad create -c text2git --force "$dest_dir"; then
+# Create DataLad superdataset with git-annex configuration
+log_info "📂 Creating DataLad superdataset with git-annex configuration in $dest_dir..."
+if ! safe_datalad create -c annex --force "$dest_dir"; then
     log_error "❌ Failed to create DataLad superdataset. Exiting script."
     exit 1
 fi
@@ -885,13 +895,13 @@ if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
     exit 1
 fi
 
-# Create sub-datasets for each subject
+# Create sub-datasets for each subject with git-annex configuration
 log_info "📂 Creating sub-datasets for each subject..."
 for subject_dir in "$src_dir"/sub-*; do
     if [[ -d "$subject_dir" ]]; then
         subject_name=$(basename "$subject_dir")
         log_info "📁 Creating sub-dataset for subject: $subject_name"
-        if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
+        if ! safe_datalad create -c annex -d "$dest_dir" "$dest_dir/$subject_name"; then
             log_error "❌ Failed to create sub-dataset for subject: $subject_name. Exiting script."
             exit 1
         fi
@@ -923,7 +933,26 @@ if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_
     exit 1
 fi
 
-# Function to validate enhanced integrity
+# Configure git-annex to optimize storage and drop file content
+log_info "🗂️  Configuring git-annex for optimized storage..."
+if [[ "$dry_run" != true ]]; then
+    # Configure git-annex settings for better performance
+    (cd "$dest_dir" && git annex config --set annex.largefiles "largerthan=100kb")
+    
+    # Drop file content from working directory (keeping only symlinks)
+    log_info "📤 Dropping file content from working directory (files will be available via 'datalad get')..."
+    if ! safe_datalad drop -d "$dest_dir" -r --nocheck; then
+        log_error "⚠️ Warning: Failed to drop some files. Storage optimization may be incomplete."
+        log_error "You can manually run: datalad drop -d \"$dest_dir\" -r --nocheck"
+    else
+        log_info "✅ File content dropped successfully. Files are now stored efficiently in git-annex."
+        log_info "💡 To access files later, use: datalad get <filename> or datalad get -d \"$dest_dir\" -r"
+    fi
+else
+    log_info "🧪 DRY RUN: Would configure git-annex and drop file content"
+fi
+
+# Function to validate enhanced integrity (accounting for git-annex storage)
 validate_integrity_enhanced() {
     local src_dir=$1
     local dest_dir=$2
@@ -932,17 +961,18 @@ validate_integrity_enhanced() {
     
     # Only compare BIDS files, not DataLad metadata
     local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    # Count symlinks in destination (git-annex creates symlinks)
+    local dest_count=$(find "$dest_dir" -type l \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
     
     log_info "Source BIDS files: $src_count"
-    log_info "Destination BIDS files: $dest_count"
+    log_info "Destination BIDS symlinks: $dest_count"
     
     if [[ $src_count -ne $dest_count ]]; then
-        log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
+        log_error "❌ BIDS file count mismatch: source=$src_count, destination symlinks=$dest_count"
         return 1
     fi
     
-    # Check if essential BIDS files exist in destination
+    # Check if essential BIDS files exist in destination (these should be regular files, not annexed)
     if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
         log_error "❌ dataset_description.json missing in destination"
         return 1
@@ -957,9 +987,27 @@ validate_integrity_enhanced() {
         return 1
     fi
     
+    # Check git-annex status for a sample of files
+    log_info "🔍 Verifying git-annex storage integrity..."
+    local sample_files=$(find "$dest_dir" -type l -name "*.nii.gz" | head -5)
+    if [[ -n "$sample_files" ]]; then
+        while IFS= read -r file; do
+            if [[ -L "$file" ]]; then
+                # Check if the symlink target exists in git-annex
+                if (cd "$dest_dir" && git annex whereis "$(basename "$file")" &>/dev/null); then
+                    log_info "✅ Git-annex tracking confirmed for: $(basename "$file")"
+                else
+                    log_error "❌ Git-annex tracking missing for: $(basename "$file")"
+                    return 1
+                fi
+            fi
+        done <<< "$sample_files"
+    fi
+    
     log_info "✅ Enhanced integrity validation passed"
-    log_info "✅ All $src_count BIDS files successfully transferred"
+    log_info "✅ All $src_count BIDS files successfully stored in git-annex"
     log_info "✅ All $src_subjects subject directories created"
+    log_info "💡 Files are now stored efficiently - use 'datalad get' to retrieve content when needed"
     
     return 0
 }
@@ -1005,17 +1053,24 @@ if [[ "$dry_run" == true ]]; then
     log_info "🧪 DRY RUN COMPLETED - No actual changes were made"
     log_info "Re-run without --dry-run to execute the conversion"
 else
-    log_info "✅ DataLad superdataset and sub-datasets created successfully and files are verified to be identical!"
+    log_info "✅ DataLad superdataset and sub-datasets created successfully with git-annex storage!"
     log_info "📊 Conversion Summary:"
     log_info "   Source: $src_dir"
     log_info "   Destination: $dest_dir"
     log_info "   Study: $study_name"
     log_info "   Duration: $duration_formatted"
+    log_info "   Storage: Optimized with git-annex (no file duplication)"
     if [[ "$create_backup_flag" == true ]]; then
         log_info "   Backup created: Yes"
     fi
     log_info "   Log file: $LOGFILE"
     log_info "   Temporary files: $TEMP_DIR"
+    log_info ""
+    log_info "💡 Next steps:"
+    log_info "   • Files are stored efficiently in git-annex"
+    log_info "   • Use 'datalad get <file>' to retrieve content when needed"
+    log_info "   • Use 'datalad drop <file>' to free space after use"
+    log_info "   • Example: datalad get -d \"$dest_dir\" sub-01/func/sub-01_task-rest_bold.nii.gz"
 fi
 
 # Function to check disk space
