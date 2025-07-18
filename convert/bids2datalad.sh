@@ -320,58 +320,14 @@ validate_bids() {
     )
 
     # Run the BIDS Validator and capture output
-    output=$( "${validator_command[@]}" 2>&1 )
-    exit_code=$?
-    
-    # Always show the output
-    echo "$output" | tee /dev/fd/3
-
-    # Define harmless warnings that should not cause failure
-    harmless_warnings=(
-        "GZIP_HEADER_MTIME"
-        "GZIP_HEADER_FILENAME"
-        "GZIP_HEADER_FEXTRA"
-    )
-
-    # Check if there are actual errors vs just harmless warnings
-    if [[ $exit_code -eq 0 ]]; then
+    if output=$( "${validator_command[@]}" 2>&1 ); then
         log_info "✅ BIDS validation completed successfully!"
-        return 0
+        echo "$output" | tee /dev/fd/3
+        return 0  # Return success code
     else
-        # Check if the failure is due to harmless warnings only
-        actual_errors=false
-        
-        # Look for error indicators that are NOT harmless warnings
-        while IFS= read -r line; do
-            if [[ $line =~ \[ERROR\] ]] || [[ $line =~ "error:" ]] || [[ $line =~ "Error:" ]]; then
-                # Check if this error is actually a harmless warning
-                is_harmless=false
-                for warning in "${harmless_warnings[@]}"; do
-                    if [[ $line =~ $warning ]]; then
-                        is_harmless=true
-                        break
-                    fi
-                done
-                
-                if [[ $is_harmless == false ]]; then
-                    actual_errors=true
-                    break
-                fi
-            fi
-        done <<< "$output"
-        
-        # Also check for critical failure patterns
-        if [[ $output =~ "no valid data" ]] || [[ $output =~ "no BIDS" ]] || [[ $output =~ "invalid dataset" ]]; then
-            actual_errors=true
-        fi
-
-        if [[ $actual_errors == true ]]; then
-            log_error "❌ BIDS validation failed with actual errors!"
-            return 1
-        else
-            log_info "✅ BIDS validation completed with only harmless warnings (GZIP headers, etc.)"
-            return 0
-        fi
+        log_error "❌ BIDS validation failed!"
+        echo "$output" | tee /dev/fd/3
+        return 1  # Return error code
     fi
 }
 
