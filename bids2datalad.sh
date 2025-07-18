@@ -1263,6 +1263,68 @@ cleanup_datalad_state() {
     fi
 }
 
+# Function to safely remove DataLad datasets with proper cleanup
+safe_remove_datalad_dataset() {
+    local dataset_path="$1"
+    local force_mode="${2:-false}"
+    
+    if [[ ! -d "$dataset_path" ]]; then
+        log_info "📂 Dataset path does not exist: $dataset_path"
+        return 0
+    fi
+    
+    log_info "🗑️ Safely removing DataLad dataset: $dataset_path"
+    
+    # Method 1: Try DataLad remove (cleanest approach)
+    if command -v datalad &> /dev/null && [[ -d "$dataset_path/.datalad" ]]; then
+        log_info "🔧 Attempting DataLad remove..."
+        if datalad remove --dataset "$dataset_path" --recursive 2>/dev/null; then
+            log_success "✅ Dataset removed successfully with DataLad"
+            return 0
+        else
+            log_info "⚠️ DataLad remove failed, trying alternative methods..."
+        fi
+    fi
+    
+    # Method 2: git-annex unlock and remove
+    if [[ -d "$dataset_path/.git" ]] && command -v git &> /dev/null; then
+        log_info "🔓 Unlocking git-annex files..."
+        (
+            cd "$dataset_path" || exit 1
+            if command -v git-annex &> /dev/null; then
+                git annex unlock . 2>/dev/null || true
+            fi
+        )
+    fi
+    
+    # Method 3: Force permissions and remove
+    log_info "🔨 Forcing permissions and removing..."
+    if [[ "$force_mode" == "true" ]] || [[ ! -t 0 ]]; then
+        # Non-interactive mode or force mode
+        chmod -R +w "$dataset_path" 2>/dev/null || true
+        rm -rf "$dataset_path"
+        log_success "✅ Dataset forcefully removed: $dataset_path"
+    else
+        # Interactive mode - ask for confirmation
+        echo "⚠️ About to forcefully remove: $dataset_path"
+        echo "This will:"
+        echo "  - Change all file permissions to writable"
+        echo "  - Recursively delete all content"
+        echo "  - Remove the entire directory structure"
+        echo ""
+        read -p "Continue? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            chmod -R +w "$dataset_path" 2>/dev/null || true
+            rm -rf "$dataset_path"
+            log_success "✅ Dataset removed: $dataset_path"
+        else
+            log_info "❌ Removal cancelled by user"
+            return 1
+        fi
+    fi
+}
+
 # Function to safely execute DataLad operations for sub-datasets with enhanced tolerance
 safe_subdataset_operation() {
     local operation="$1"
@@ -1344,7 +1406,7 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--cleanup dataset_path]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
@@ -1356,6 +1418,7 @@ usage() {
     echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
     echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
+    echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Storage:" | tee /dev/fd/3
     echo "  - Files are stored efficiently in git-annex (no duplication)" | tee /dev/fd/3
@@ -1388,10 +1451,16 @@ usage() {
     echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  $0 --fasttrack -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Faster conversion - skips checksum validation" | tee /dev/fd/3
+    echo "  $0 --cleanup /path/to/dataset/to/remove" | tee /dev/fd/3
+    echo "  # Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Post-conversion usage:" | tee /dev/fd/3
     echo "  datalad get -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
     echo "  datalad drop -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Cleanup usage:" | tee /dev/fd/3
+    echo "  # When you can't delete a DataLad dataset with rm:" | tee /dev/fd/3
+    echo "  $0 --cleanup /path/to/problematic/dataset" | tee /dev/fd/3
     exit 1
 }
 
@@ -1531,6 +1600,16 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
         --fasttrack)
             fasttrack=true
             ;;
+        --cleanup)
+            cleanup_mode=true
+            if [[ -n "$2" ]]; then
+                cleanup_dataset_path="$2"
+                shift
+            else
+                log_error "❌ --cleanup requires a dataset path"
+                usage
+            fi
+            ;;
         *)
             log_error "❌ Unknown option: $1"
             usage
@@ -1538,6 +1617,18 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
     esac
     shift
 done
+
+# Handle cleanup mode
+if [[ "$cleanup_mode" == "true" ]]; then
+    if [[ -z "$cleanup_dataset_path" ]]; then
+        log_error "❌ Cleanup mode requires a dataset path"
+        usage
+    fi
+    
+    log_info "🗑️ Starting DataLad dataset cleanup..."
+    safe_remove_datalad_dataset "$cleanup_dataset_path"
+    exit $?
+fi
 
 # Check for required arguments
 if [[ -z "$src_dir" || -z "$dest_root" ]]; then
