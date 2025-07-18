@@ -67,7 +67,6 @@ cleanup_on_exit() {
 # Set up cleanup trap
 trap cleanup_on_exit EXIT
 
-# Set up logging redirection carefully
 exec 3>&1 4>&2  # Save original file descriptors for terminal output
 trap 'exec 2>&4 1>&3' 0 1 2 3  # Restore original file descriptors on exit
 exec 1>>"$LOGFILE" 2>&1  # Redirect all output to the log file
@@ -321,50 +320,14 @@ validate_bids() {
     )
 
     # Run the BIDS Validator and capture output
-    output=$( "${validator_command[@]}" 2>&1 )
-    exit_code=$?
-    
-    # Always show the output
-    echo "$output" | tee /dev/fd/3
-
-    # For DataLad datasets, we are much more lenient with validation
-    # since git-annex symlinks and DataLad structure may cause "warnings"
-    # that are not actual problems
-    
-    # Check for critical failures that indicate real problems
-    critical_failures=false
-    
-    # Look for actual critical error patterns
-    if [[ $output =~ "CRITICAL" ]] || \
-       [[ $output =~ "FATAL" ]] || \
-       [[ $output =~ "no valid data" ]] || \
-       [[ $output =~ "not a BIDS dataset" ]] || \
-       [[ $output =~ "invalid dataset structure" ]] || \
-       [[ $output =~ "required files missing" ]]; then
-        critical_failures=true
-    fi
-    
-    # Also check for explicit ERROR patterns (not warnings)
-    if echo "$output" | grep -q "\[ERROR\].*required.*missing"; then
-        critical_failures=true
-    fi
-    
-    # For DataLad datasets, ignore warnings and most non-critical issues
-    if [[ $critical_failures == true ]]; then
-        log_error "❌ BIDS validation failed with critical errors!"
-        log_error "This indicates fundamental problems with the dataset structure"
-        return 1
+    if output=$( "${validator_command[@]}" 2>&1 ); then
+        log_info "✅ BIDS validation completed successfully!"
+        echo "$output" | tee /dev/fd/3
+        return 0  # Return success code
     else
-        if [[ $exit_code -eq 0 ]]; then
-            log_success "✅ BIDS validation passed completely!"
-        else
-            log_success "✅ BIDS validation passed (warnings ignored for DataLad compatibility)"
-            log_info "💡 Non-zero exit code ($exit_code) is normal for DataLad datasets due to:"
-            log_info "   - git-annex symlinks (expected behavior)"
-            log_info "   - DataLad-specific structure differences"
-            log_info "   - Non-critical warnings that don't affect functionality"
-        fi
-        return 0
+        log_error "❌ BIDS validation failed!"
+        echo "$output" | tee /dev/fd/3
+        return 1  # Return error code
     fi
 }
 
@@ -682,17 +645,10 @@ validate_arguments() {
     if ! ls "$src_dir"/sub-* &> /dev/null; then
         log_error "⚠️  Warning: No 'sub-*' directories found in source directory."
         log_error "This may not be a valid BIDS dataset structure."
-        
-        if [[ "$non_interactive" == "true" ]]; then
-            log_error "❌ Running in non-interactive mode. Aborting due to invalid BIDS structure."
-            log_error "Use --skip_bids_validation to bypass this check if needed."
+        read -p "Do you want to continue anyway? (y/n): " confirm
+        if [[ "$confirm" != "y" ]]; then
+            log_error "❌ Aborting script."
             exit 1
-        else
-            read -p "Do you want to continue anyway? (y/n): " confirm
-            if [[ "$confirm" != "y" ]]; then
-                log_error "❌ Aborting script."
-                exit 1
-            fi
         fi
     fi
 }
@@ -834,14 +790,9 @@ check_permissions() {
         log_error "⚠️ Found $unreadable_files unreadable files in source directory"
         log_error "This may cause the conversion to fail"
         if [[ "$dry_run" != true ]]; then
-            if [[ "$non_interactive" == "true" ]]; then
-                log_error "❌ Running in non-interactive mode. Aborting due to unreadable files."
+            read -p "Continue anyway? (y/n): " confirm
+            if [[ "$confirm" != "y" ]]; then
                 return 1
-            else
-                read -p "Continue anyway? (y/n): " confirm
-                if [[ "$confirm" != "y" ]]; then
-                    return 1
-                fi
             fi
         fi
     fi
@@ -1268,68 +1219,6 @@ cleanup_datalad_state() {
     fi
 }
 
-# Function to safely remove DataLad datasets with proper cleanup
-safe_remove_datalad_dataset() {
-    local dataset_path="$1"
-    local force_mode="${2:-false}"
-    
-    if [[ ! -d "$dataset_path" ]]; then
-        log_info "📂 Dataset path does not exist: $dataset_path"
-        return 0
-    fi
-    
-    log_info "🗑️ Safely removing DataLad dataset: $dataset_path"
-    
-    # Method 1: Try DataLad remove (cleanest approach)
-    if command -v datalad &> /dev/null && [[ -d "$dataset_path/.datalad" ]]; then
-        log_info "🔧 Attempting DataLad remove..."
-        if datalad remove --dataset "$dataset_path" --recursive 2>/dev/null; then
-            log_success "✅ Dataset removed successfully with DataLad"
-            return 0
-        else
-            log_info "⚠️ DataLad remove failed, trying alternative methods..."
-        fi
-    fi
-    
-    # Method 2: git-annex unlock and remove
-    if [[ -d "$dataset_path/.git" ]] && command -v git &> /dev/null; then
-        log_info "🔓 Unlocking git-annex files..."
-        (
-            cd "$dataset_path" || exit 1
-            if command -v git-annex &> /dev/null; then
-                git annex unlock . 2>/dev/null || true
-            fi
-        )
-    fi
-    
-    # Method 3: Force permissions and remove
-    log_info "🔨 Forcing permissions and removing..."
-    if [[ "$force_mode" == "true" ]] || [[ ! -t 0 ]] || [[ "$non_interactive" == "true" ]]; then
-        # Non-interactive mode or force mode
-        chmod -R +w "$dataset_path" 2>/dev/null || true
-        rm -rf "$dataset_path"
-        log_success "✅ Dataset forcefully removed: $dataset_path"
-    else
-        # Interactive mode - ask for confirmation
-        echo "⚠️ About to forcefully remove: $dataset_path"
-        echo "This will:"
-        echo "  - Change all file permissions to writable"
-        echo "  - Recursively delete all content"
-        echo "  - Remove the entire directory structure"
-        echo ""
-        read -p "Continue? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            chmod -R +w "$dataset_path" 2>/dev/null || true
-            rm -rf "$dataset_path"
-            log_success "✅ Dataset removed: $dataset_path"
-        else
-            log_info "❌ Removal cancelled by user"
-            return 1
-        fi
-    fi
-}
-
 # Function to safely execute DataLad operations for sub-datasets with enhanced tolerance
 safe_subdataset_operation() {
     local operation="$1"
@@ -1411,7 +1300,7 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--cleanup dataset_path]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
@@ -1421,10 +1310,8 @@ usage() {
     echo "  --dry-run                Show what would be done without executing" | tee /dev/fd/3
     echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
     echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
-    echo "  --force-empty            Overwrite non-empty destination directory (DANGEROUS)" | tee /dev/fd/3
-    echo "  --non-interactive        Run without interactive prompts (for remote/automated use)" | tee /dev/fd/3
+    echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
-    echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Storage:" | tee /dev/fd/3
     echo "  - Files are stored efficiently in git-annex (no duplication)" | tee /dev/fd/3
@@ -1438,7 +1325,7 @@ usage() {
     echo "Safety:" | tee /dev/fd/3
     echo "  - Source files are NEVER modified (read-only operation)" | tee /dev/fd/3
     echo "  - The script checks if destination directory is empty before proceeding" | tee /dev/fd/3
-    echo "  - Use --force-empty to overwrite non-empty destination (DANGEROUS)" | tee /dev/fd/3
+    echo "  - Use --force-empty to abort if destination is not empty" | tee /dev/fd/3
     echo "  - Use --backup to create backup of existing destination (not source)" | tee /dev/fd/3
     echo "  - Use --dry-run to preview operations without making changes" | tee /dev/fd/3
     echo "  - Use --fasttrack for faster conversion (skips checksums)" | tee /dev/fd/3
@@ -1457,18 +1344,10 @@ usage() {
     echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  $0 --fasttrack -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Faster conversion - skips checksum validation" | tee /dev/fd/3
-    echo "  $0 --non-interactive -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
-    echo "  # Remote server usage - no interactive prompts" | tee /dev/fd/3
-    echo "  $0 --cleanup /path/to/dataset/to/remove" | tee /dev/fd/3
-    echo "  # Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Post-conversion usage:" | tee /dev/fd/3
     echo "  datalad get -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
     echo "  datalad drop -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
-    echo "" | tee /dev/fd/3
-    echo "Cleanup usage:" | tee /dev/fd/3
-    echo "  # When you can't delete a DataLad dataset with rm:" | tee /dev/fd/3
-    echo "  $0 --cleanup /path/to/problematic/dataset" | tee /dev/fd/3
     exit 1
 }
 
@@ -1569,14 +1448,12 @@ create_backup_flag=false
 parallel_hash=false
 force_empty=false
 fasttrack=false
-non_interactive=false
-cleanup_mode=false
-cleanup_dataset_path=""
 src_dir=""
 dest_root=""
 dest_dir=""
 study_name=""
 src_dir_name=""
+
 
 # Parse options
 while [[ $# -gt 0 && "$1" == -* ]]; do
@@ -1606,23 +1483,9 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
             ;;
         --force-empty)
             force_empty=true
-            log_warning "⚠️ Force-empty mode enabled - will overwrite non-empty destination"
             ;;
         --fasttrack)
             fasttrack=true
-            ;;
-        --non-interactive)
-            non_interactive=true
-            ;;
-        --cleanup)
-            cleanup_mode=true
-            if [[ -n "$2" ]]; then
-                cleanup_dataset_path="$2"
-                shift
-            else
-                log_error "❌ --cleanup requires a dataset path"
-                usage
-            fi
             ;;
         *)
             log_error "❌ Unknown option: $1"
@@ -1631,18 +1494,6 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
     esac
     shift
 done
-
-# Handle cleanup mode
-if [[ "$cleanup_mode" == "true" ]]; then
-    if [[ -z "$cleanup_dataset_path" ]]; then
-        log_error "❌ Cleanup mode requires a dataset path"
-        usage
-    fi
-    
-    log_info "🗑️ Starting DataLad dataset cleanup..."
-    safe_remove_datalad_dataset "$cleanup_dataset_path"
-    exit $?
-fi
 
 # Check for required arguments
 if [[ -z "$src_dir" || -z "$dest_root" ]]; then
@@ -1663,38 +1514,18 @@ dest_dir="$dest_root/$study_name"
 # EARLY CHECK: Stop immediately if destination directory is not empty
 # This saves time by avoiding all other validations if we'll fail anyway
 if [[ -d "$dest_dir" && "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
-    # Check if force_empty flag is set to override this check
-    if [[ "$force_empty" == true ]]; then
-        log_warning "⚠️ DESTINATION DIRECTORY IS NOT EMPTY: $dest_dir"
-        log_warning "🚫 Force-empty flag is set - proceeding anyway (will overwrite existing content)"
-        log_warning "⚠️ This will remove all existing content in the destination directory"
-        if [[ "$non_interactive" != true ]]; then
-            echo "Continue with overwriting existing content? (y/N): " | tee /dev/fd/3
-            read -r response
-            if [[ "$response" != "y" && "$response" != "Y" ]]; then
-                log_error "❌ Operation cancelled by user"
-                exit 1
-            fi
-        fi
-        log_info "🗑️ Removing existing content from destination directory..."
-        rm -rf "${dest_dir:?}"/* 2>/dev/null || true
-        rm -rf "${dest_dir:?}"/.[!.]* 2>/dev/null || true
-        log_info "✅ Destination directory cleared"
-    else
-        log_error "❌ DESTINATION DIRECTORY IS NOT EMPTY: $dest_dir"
-        log_error ""
-        log_error "For safety reasons, this script requires an empty destination directory."
-        log_error ""
-        log_error "Please either:"
-        log_error "  1. Choose a different, empty destination directory"
-        log_error "  2. Manually remove/backup the contents of: $dest_dir"
-        log_error "  3. Use a subdirectory like: $dest_dir/new_dataset_name"
-        log_error "  4. Use --force-empty flag to overwrite existing content (DANGEROUS)"
-        log_error ""
-        log_error "Example: bash $0 -s $src_dir -d $dest_root/seattle_datalad_$(date +%Y%m%d)"
-        log_error ""
-        exit 1
-    fi
+    log_error "❌ DESTINATION DIRECTORY IS NOT EMPTY: $dest_dir"
+    log_error ""
+    log_error "For safety reasons, this script requires an empty destination directory."
+    log_error ""
+    log_error "Please either:"
+    log_error "  1. Choose a different, empty destination directory"
+    log_error "  2. Manually remove/backup the contents of: $dest_dir"
+    log_error "  3. Use a subdirectory like: $dest_dir/new_dataset_name"
+    log_error ""
+    log_error "Example: bash $0 -s $src_dir -d $dest_root/seattle_datalad_$(date +%Y%m%d)"
+    log_error ""
+    exit 1
 fi
 
 # Convert relative paths to absolute paths
@@ -1790,12 +1621,6 @@ fi
 # Create recovery information
 if [[ "$dry_run" != true ]]; then
     create_recovery_info "$src_dir" "$dest_dir"
-fi
-
-# Create backup if requested
-if [[ "$create_backup_flag" == true ]]; then
-    log_info "📦 Creating backup as requested..."
-    create_backup "$src_dir"
 fi
 
 # Validate BIDS dataset if validation is not skipped
@@ -1979,10 +1804,6 @@ log_info "✅ All changes saved successfully to DataLad dataset"
 log_info "🗂️ Git-annex storage optimization complete - files are available as symlinks to annexed content"
 log_info "💡 Files are immediately accessible - no need to run 'datalad get'"
 
-# Create comprehensive conversion report
-log_info "📋 Creating conversion report..."
-create_conversion_report "$src_dir" "$dest_dir" "$start_time" "$study_name"
-
 # Calculate conversion duration
 end_time_epoch=$(date +%s)
 duration=$((end_time_epoch - start_time_epoch))
@@ -2006,34 +1827,30 @@ else
         log_info "🎯 Validating: $dest_dir"
         log_info "⏱️ This may take a few minutes for large datasets..."
         log_info "🔄 Validator will check file structure, naming conventions, and metadata..."
-        log_info "💡 Note: Warnings about git-annex symlinks are expected and normal for DataLad datasets"
         
         # Add timeout to prevent hanging
         if timeout 300s validate_bids "$dest_dir"; then
             log_success "✅ Final BIDS validation PASSED - Converted dataset is valid!"
-            log_success "🎉 Dataset structure and metadata follow BIDS specification"
+            log_success "🎉 All files follow BIDS specification correctly"
         else
             validation_exit_code=$?
             if [[ $validation_exit_code -eq 124 ]]; then
                 log_warning "⏰ Final BIDS validation TIMED OUT (5 minutes) - Dataset may be very large"
                 log_warning "Consider running manual validation: bids-validator '$dest_dir'"
             else
-                log_error "❌ Final BIDS validation FAILED with critical errors"
-                log_error "This indicates fundamental problems with the dataset structure"
-                log_error "Please review the validation output above for specific issues"
-                log_error "💡 To skip this validation in future runs, use: --skip_bids_validation"
-                exit 1
+                log_warning "⚠️ Final BIDS validation FAILED - There may be issues with the converted dataset"
+                log_warning "This could be due to:"
+                log_warning "  • git-annex symlinks (expected - not a real error)"
+                log_warning "  • Missing optional files"
+                log_warning "  • DataLad-specific structure differences"
+                log_warning "Please check the validation output above for details."
+                log_warning "💡 To skip this validation in future runs, use: --skip_bids_validation"
             fi
         fi
     else
         log_info "⏭️ Final BIDS validation skipped (--skip_bids_validation flag used)"
     fi
-    
-    # Perform final verification of the conversion
-    log_info "🔍 Performing final verification of the converted dataset..."
-        final_verification "$dest_dir"
-        
-        log_info ""
+    log_info ""
     
     log_info "✅ DataLad conversion completed successfully!"
     log_info "📊 Conversion Summary:"
