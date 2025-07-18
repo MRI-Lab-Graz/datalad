@@ -67,6 +67,7 @@ cleanup_on_exit() {
 # Set up cleanup trap
 trap cleanup_on_exit EXIT
 
+# Set up logging redirection carefully
 exec 3>&1 4>&2  # Save original file descriptors for terminal output
 trap 'exec 2>&4 1>&3' 0 1 2 3  # Restore original file descriptors on exit
 exec 1>>"$LOGFILE" 2>&1  # Redirect all output to the log file
@@ -689,10 +690,17 @@ validate_arguments() {
     if ! ls "$src_dir"/sub-* &> /dev/null; then
         log_error "⚠️  Warning: No 'sub-*' directories found in source directory."
         log_error "This may not be a valid BIDS dataset structure."
-        read -p "Do you want to continue anyway? (y/n): " confirm
-        if [[ "$confirm" != "y" ]]; then
-            log_error "❌ Aborting script."
+        
+        if [[ "$non_interactive" == "true" ]]; then
+            log_error "❌ Running in non-interactive mode. Aborting due to invalid BIDS structure."
+            log_error "Use --skip_bids_validation to bypass this check if needed."
             exit 1
+        else
+            read -p "Do you want to continue anyway? (y/n): " confirm
+            if [[ "$confirm" != "y" ]]; then
+                log_error "❌ Aborting script."
+                exit 1
+            fi
         fi
     fi
 }
@@ -834,9 +842,14 @@ check_permissions() {
         log_error "⚠️ Found $unreadable_files unreadable files in source directory"
         log_error "This may cause the conversion to fail"
         if [[ "$dry_run" != true ]]; then
-            read -p "Continue anyway? (y/n): " confirm
-            if [[ "$confirm" != "y" ]]; then
+            if [[ "$non_interactive" == "true" ]]; then
+                log_error "❌ Running in non-interactive mode. Aborting due to unreadable files."
                 return 1
+            else
+                read -p "Continue anyway? (y/n): " confirm
+                if [[ "$confirm" != "y" ]]; then
+                    return 1
+                fi
             fi
         fi
     fi
@@ -1299,7 +1312,7 @@ safe_remove_datalad_dataset() {
     
     # Method 3: Force permissions and remove
     log_info "🔨 Forcing permissions and removing..."
-    if [[ "$force_mode" == "true" ]] || [[ ! -t 0 ]]; then
+    if [[ "$force_mode" == "true" ]] || [[ ! -t 0 ]] || [[ "$non_interactive" == "true" ]]; then
         # Non-interactive mode or force mode
         chmod -R +w "$dataset_path" 2>/dev/null || true
         rm -rf "$dataset_path"
@@ -1406,7 +1419,7 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--cleanup dataset_path]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--cleanup dataset_path]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
@@ -1417,6 +1430,7 @@ usage() {
     echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
     echo "  --parallel-hash          Use parallel processing for hash calculation" | tee /dev/fd/3
     echo "  --force-empty            Require destination directory to be empty (safety mode)" | tee /dev/fd/3
+    echo "  --non-interactive        Run without interactive prompts (for remote/automated use)" | tee /dev/fd/3
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
     echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
@@ -1451,6 +1465,8 @@ usage() {
     echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  $0 --fasttrack -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Faster conversion - skips checksum validation" | tee /dev/fd/3
+    echo "  $0 --non-interactive -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Remote server usage - no interactive prompts" | tee /dev/fd/3
     echo "  $0 --cleanup /path/to/dataset/to/remove" | tee /dev/fd/3
     echo "  # Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
@@ -1561,12 +1577,14 @@ create_backup_flag=false
 parallel_hash=false
 force_empty=false
 fasttrack=false
+non_interactive=false
+cleanup_mode=false
+cleanup_dataset_path=""
 src_dir=""
 dest_root=""
 dest_dir=""
 study_name=""
 src_dir_name=""
-
 
 # Parse options
 while [[ $# -gt 0 && "$1" == -* ]]; do
@@ -1599,6 +1617,9 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
             ;;
         --fasttrack)
             fasttrack=true
+            ;;
+        --non-interactive)
+            non_interactive=true
             ;;
         --cleanup)
             cleanup_mode=true
