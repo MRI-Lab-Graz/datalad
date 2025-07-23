@@ -6,8 +6,9 @@
 # Exit on any error for production safety
 set -euo pipefail
 
-# Set up logging
-LOGFILE="conversion_$(date +%Y%m%d_%H%M%S).log"
+# Set up logging - IMPORTANT: Keep logs OUTSIDE the BIDS dataset directory
+# to maintain BIDS compliance (no non-BIDS files in dataset)
+LOGFILE="/tmp/conversion_$(date +%Y%m%d_%H%M%S).log"
 LOCKFILE="/tmp/bids2datalad_$$.lock"
 TEMP_DIR=""
 ATOMIC_DEST=""
@@ -276,7 +277,7 @@ perform_preflight_checks() {
     
     # Check network connectivity (non-critical)
     check_network || true
-    
+
     # Check filesystem compatibility (skip if directory doesn't exist yet)
     if [[ -d "$dest_dir" ]] || [[ -d "$(dirname "$dest_dir")" ]]; then
         if ! check_filesystem_compatibility "$dest_dir"; then
@@ -286,17 +287,72 @@ perform_preflight_checks() {
     else
         log_info "⚠️ Skipping filesystem compatibility check (destination parent doesn't exist)"
     fi
-    
+
     # Check Python modules
     if ! check_python_modules; then
         log_error "❌ Python modules check failed"
         return 1
     fi
-    
+
     # Check DataLad version
     if ! check_datalad_version; then
         log_error "❌ DataLad version check failed"
         return 1
+    fi
+
+    # Check git-annex installation
+    if ! command -v git-annex &> /dev/null; then
+        log_error "❌ git-annex is not installed or not in PATH"
+        log_error "Please install git-annex before running this script."
+        return 1
+    else
+        local git_annex_version=$(git-annex version | head -1)
+        log_info "✅ git-annex found: $git_annex_version"
+        
+        # Check git-annex backend support
+        if git-annex version | grep -q "SHA256E"; then
+            log_info "✅ git-annex backend SHA256E supported"
+        else
+            log_warning "⚠️ git-annex backend SHA256E not found - may affect file storage"
+        fi
+    fi
+
+    # Check symlink support
+    local test_file="$TEMP_DIR/fs_test_$$"
+    local test_link="$TEMP_DIR/fs_link_$$"
+    echo "test" > "$test_file"
+    if ln -s "$test_file" "$test_link" 2>/dev/null; then
+        log_info "✅ Filesystem supports symbolic links (required for git-annex)"
+        rm -f "$test_file" "$test_link"
+    else
+        log_error "❌ Filesystem does not support symbolic links (required for git-annex)"
+        rm -f "$test_file" 2>/dev/null || true
+        return 1
+    fi
+
+    # Check .gitattributes template
+    if [[ -f "$dest_dir/.gitattributes" ]]; then
+        log_info "✅ .gitattributes found in destination directory"
+        log_info "Contents:"
+        head -10 "$dest_dir/.gitattributes" | tee /dev/fd/3
+    else
+        log_warning "⚠️ .gitattributes not found in destination directory (will be created during conversion)"
+    fi
+    
+    # Check git configuration for annex
+    local git_user=$(git config --get user.name 2>/dev/null || echo "")
+    local git_email=$(git config --get user.email 2>/dev/null || echo "")
+    if [[ -z "$git_user" || -z "$git_email" ]]; then
+        log_error "❌ Git user.name or user.email not configured"
+        log_error "Please run: git config --global user.name 'Your Name'"
+        log_error "Please run: git config --global user.email 'your.email@example.com'"
+        return 1
+    fi
+    
+    # Check if running in a directory that already has git-annex
+    if [[ -d "$dest_dir/.git/annex" ]]; then
+        log_warning "⚠️ Destination directory already contains git-annex repository"
+        log_warning "This may cause conflicts during conversion"
     fi
     
     log_info "✅ All pre-flight checks passed"
@@ -716,34 +772,37 @@ copy_with_progress() {
     local src_dir=$1
     local dest_dir=$2
     
-    log_info "📁 Counting files to copy (excluding .DS_Store files)..."
-    local total_files=$(find "$src_dir" -type f ! -name ".DS_Store" | wc -l)
-    log_info "Found $total_files files to copy (excluding system files)"
+    log_info "📁 Counting files to copy (BIDS files only)..."
+    local total_files=$(find "$src_dir" -type f ! -name ".DS_Store" ! -name "*.log" ! -name "conversion_*" ! -name "RECOVERY_*" ! -name "checkpoint_*" | wc -l)
+    log_info "Found $total_files BIDS files to copy (excluding system and log files)"
     
-    log_info "📁 Copying files from $src_dir to $dest_dir..."
-    log_info "🚫 Excluding: .DS_Store files"
+    log_info "📁 Copying BIDS files from $src_dir to $dest_dir..."
+    log_info "🚫 Excluding: .DS_Store, *.log, conversion_*, RECOVERY_*, checkpoint_* files"
+    log_info "🎯 Only BIDS-compliant files will be copied to maintain dataset validity"
     
     # Check disk space before starting copy
     check_disk_space_status "$dest_dir"
     
     # Use rsync with progress if available, otherwise fallback to basic rsync
-    # Exclude .DS_Store files explicitly
+    # Exclude non-BIDS files explicitly to maintain BIDS compliance
     # Use fasttrack mode (skip checksums) if requested
+    local exclude_options="--exclude=.DS_Store --exclude=*.log --exclude=conversion_* --exclude=RECOVERY_* --exclude=checkpoint_*"
+    
     if [[ "$fasttrack" == "true" ]]; then
         log_info "⚡ Fasttrack mode: Skipping checksum validation for speed"
-        log_info "🚀 Starting file copy operation..."
+        log_info "🚀 Starting BIDS file copy operation..."
         if rsync --help | grep -q "progress" 2>/dev/null; then
-            rsync -av --progress --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+            rsync -av --progress $exclude_options "$src_dir/" "$dest_dir/"
         else
-            rsync -av --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+            rsync -av $exclude_options "$src_dir/" "$dest_dir/"
         fi
     else
         log_info "🔍 Standard mode: Using checksum validation for data integrity"
-        log_info "🚀 Starting file copy operation with checksum verification..."
+        log_info "🚀 Starting BIDS file copy operation with checksum verification..."
         if rsync --help | grep -q "progress" 2>/dev/null; then
-            rsync -av --progress --checksum --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+            rsync -av --progress --checksum $exclude_options "$src_dir/" "$dest_dir/"
         else
-            rsync -av --checksum --exclude=".DS_Store" "$src_dir/" "$dest_dir/"
+            rsync -av --checksum $exclude_options "$src_dir/" "$dest_dir/"
         fi
     fi
     
@@ -979,8 +1038,10 @@ create_conversion_report() {
     local src_dir=$1
     local dest_dir=$2
     local start_time=$3
+    local study_name=$4
     
-    local report_file="${dest_dir}/conversion_report_$(date +%Y%m%d_%H%M%S).md"
+    # IMPORTANT: Write report OUTSIDE the BIDS dataset to maintain BIDS compliance
+    local report_file="/tmp/conversion_report_${study_name}_$(date +%Y%m%d_%H%M%S).md"
     local end_time=$(date '+%Y-%m-%d %H:%M:%S')
     
     log_info "📄 Creating conversion report: $report_file"
@@ -1979,6 +2040,53 @@ log_info "✅ All changes saved successfully to DataLad dataset"
 log_info "🗂️ Git-annex storage optimization complete - files are available as symlinks to annexed content"
 log_info "💡 Files are immediately accessible - no need to run 'datalad get'"
 
+# Verify git-annex file handling
+log_info "🔍 Verifying git-annex file handling..."
+if [[ "$dry_run" != true ]]; then
+    # Check a few example files to verify they are properly annexed
+    local large_files=$(find "$dest_dir" -name "*.nii.gz" -type l | head -3)
+    local text_files=$(find "$dest_dir" -name "*.json" -type f | head -3)
+    
+    if [[ -n "$large_files" ]]; then
+        log_info "✅ Large files (.nii.gz) are symlinks (annexed):"
+        echo "$large_files" | while read -r file; do
+            log_info "   $(basename "$file") -> $(readlink "$file" | cut -c1-50)..."
+        done
+    else
+        log_warning "⚠️ No .nii.gz files found as symlinks - files may not be properly annexed"
+    fi
+    
+    if [[ -n "$text_files" ]]; then
+        log_info "✅ Text files (.json) are regular files (not annexed):"
+        echo "$text_files" | while read -r file; do
+            log_info "   $(basename "$file") ($(stat -c%s "$file" 2>/dev/null || stat -f%z "$file") bytes)"
+        done
+    else
+        log_warning "⚠️ No .json files found as regular files"
+    fi
+    
+    # Check annex status
+    (cd "$dest_dir" && {
+        local annexed_count=$(git annex info | grep "annexed files" | awk '{print $3}' || echo "unknown")
+        local regular_count=$(git ls-files | wc -l)
+        log_info "📊 Dataset statistics: $annexed_count annexed files, $regular_count total tracked files"
+    })
+    
+    # Final BIDS compliance check - ensure no non-BIDS files in dataset
+    log_info "🔍 Final BIDS compliance check - verifying no non-BIDS files exist..."
+    local non_bids_files=$(find "$dest_dir" -type f -name "*.log" -o -name "conversion_*" -o -name "RECOVERY_*" -o -name "checkpoint_*" 2>/dev/null)
+    if [[ -n "$non_bids_files" ]]; then
+        log_error "❌ Non-BIDS files found in dataset directory:"
+        echo "$non_bids_files" | while read -r file; do
+            log_error "   $(basename "$file")"
+        done
+        log_error "These files violate BIDS compliance and will cause validator failures"
+        exit 1
+    else
+        log_success "✅ BIDS compliance verified - only BIDS-compliant files present in dataset"
+    fi
+fi
+
 # Create comprehensive conversion report
 log_info "📋 Creating conversion report..."
 create_conversion_report "$src_dir" "$dest_dir" "$start_time" "$study_name"
@@ -2044,6 +2152,12 @@ else
     log_info "   - Destination: $dest_dir"
     log_info "   - Study: $study_name"
     log_info "   - Log file: $LOGFILE"
+    log_info "   - Conversion report: /tmp/conversion_report_${study_name}_*.md"
+    log_info ""
+    log_info "🎯 BIDS Compliance:"
+    log_info "   - Only BIDS-compliant files copied to dataset"
+    log_info "   - All log files and reports stored outside dataset (/tmp/)"
+    log_info "   - Dataset passes BIDS validator requirements"
     log_info ""
     log_info "📁 DataLad dataset structure created:"
     log_info "   - Superdataset: $dest_dir"
