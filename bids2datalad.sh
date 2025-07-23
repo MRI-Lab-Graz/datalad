@@ -1,3 +1,14 @@
+    # Check git core.symlinks configuration
+    local symlinks_config=$(git config --show-origin core.symlinks 2>/dev/null | awk '{print $NF}')
+    if [[ "$symlinks_config" == "false" ]]; then
+        log_error "❌ Git config core.symlinks is set to false. Symlinks will NOT be created!"
+        log_error "This will break DataLad/git-annex functionality."
+        log_error "To fix, run one of the following commands:"
+        log_error "   git config --global --unset core.symlinks"
+        log_error "   # or to force correct behavior:"
+        log_error "   git config --global core.symlinks true"
+        exit 1
+    fi
 #!/bin/bash
 
 # PRODUCTION-READY BIDS TO DATALAD CONVERTER v2.1
