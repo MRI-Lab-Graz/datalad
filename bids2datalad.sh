@@ -822,6 +822,66 @@ copy_with_progress() {
     check_disk_space_status "$dest_dir"
 }
 
+# Function to ensure git-annex configuration without clobbering existing settings
+ensure_gitattributes_config() {
+    local dataset_path=$1
+    local commit_if_new=${2:-false}
+
+    if [[ "$dry_run" == true ]]; then
+        log_info "🧪 DRY RUN: Would ensure git-annex configuration for $dataset_path"
+        return 0
+    fi
+
+    if [[ ! -d "$dataset_path" ]]; then
+        log_warning "⚠️ Dataset path missing while configuring .gitattributes: $dataset_path"
+        return 0
+    fi
+
+    local attr_file="$dataset_path/.gitattributes"
+    local required_entries=(
+        "*.json annex.largefiles=nothing"
+        "*.tsv annex.largefiles=nothing"
+        "*.bval annex.largefiles=nothing"
+        "*.bvec annex.largefiles=nothing"
+        "*.txt annex.largefiles=nothing"
+        "*.md annex.largefiles=nothing"
+        "*.py annex.largefiles=nothing"
+        "*.sh annex.largefiles=nothing"
+        "*.m annex.largefiles=nothing"
+        "README annex.largefiles=nothing"
+        "LICENSE annex.largefiles=nothing"
+        "CHANGES annex.largefiles=nothing"
+        ".DS_Store annex.largefiles=nothing"
+        "* annex.largefiles=(largerthan=1MB)"
+    )
+
+    touch "$attr_file"
+    local updated=false
+
+    for entry in "${required_entries[@]}"; do
+        if ! grep -Fxq "$entry" "$attr_file"; then
+            echo "$entry" >> "$attr_file"
+            updated=true
+        fi
+    done
+
+    if [[ "$updated" == true ]]; then
+        log_info "🧾 Updated git-annex configuration in $dataset_path/.gitattributes"
+        if [[ "$commit_if_new" == true ]]; then
+            (
+                cd "$dataset_path" && {
+                    git add .gitattributes
+                    git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
+                }
+            )
+        else
+            log_info "ℹ️ Changes will be included in the next DataLad save for $dataset_path"
+        fi
+    else
+        log_info "✅ Git-annex configuration already up to date in $dataset_path/.gitattributes"
+    fi
+}
+
 # Function to create backup
 create_backup() {
     local dest_dir=$1
@@ -1483,7 +1543,7 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--cleanup dataset_path]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--update] [--cleanup dataset_path]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
@@ -1496,6 +1556,7 @@ usage() {
     echo "  --force-empty            Overwrite non-empty destination directory (DANGEROUS)" | tee /dev/fd/3
     echo "  --non-interactive        Run without interactive prompts (for remote/automated use)" | tee /dev/fd/3
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
+    echo "  --update                 Reuse existing DataLad dataset and ingest new/changed subjects" | tee /dev/fd/3
     echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Storage:" | tee /dev/fd/3
@@ -1529,6 +1590,8 @@ usage() {
     echo "  $0 --backup --skip_bids_validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  $0 --fasttrack -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Faster conversion - skips checksum validation" | tee /dev/fd/3
+    echo "  $0 --update -s /path/to/bids_data -d /existing/datalad/destination" | tee /dev/fd/3
+    echo "  # Incremental update - adds new subjects without recreating dataset" | tee /dev/fd/3
     echo "  $0 --non-interactive -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Remote server usage - no interactive prompts" | tee /dev/fd/3
     echo "  $0 --cleanup /path/to/dataset/to/remove" | tee /dev/fd/3
@@ -1644,11 +1707,13 @@ fasttrack=false
 non_interactive=false
 cleanup_mode=false
 cleanup_dataset_path=""
+update_mode=false
 src_dir=""
 dest_root=""
 dest_dir=""
 study_name=""
 src_dir_name=""
+superdataset_exists=false
 
 # Parse options
 while [[ $# -gt 0 && "$1" == -* ]]; do
@@ -1686,6 +1751,9 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
         --non-interactive)
             non_interactive=true
             ;;
+        --update)
+            update_mode=true
+            ;;
         --cleanup)
             cleanup_mode=true
             if [[ -n "$2" ]]; then
@@ -1716,6 +1784,13 @@ if [[ "$cleanup_mode" == "true" ]]; then
     exit $?
 fi
 
+# Validate incompatible options
+if [[ "$update_mode" == true && "$force_empty" == true ]]; then
+    log_error "❌ --update and --force-empty cannot be used together"
+    log_error "Update mode preserves existing datasets; force-empty would remove them."
+    exit 1
+fi
+
 # Check for required arguments
 if [[ -z "$src_dir" || -z "$dest_root" ]]; then
     usage
@@ -1732,11 +1807,16 @@ src_dir_name=$(basename "$src_dir")
 # Create destination path: dest_root/study_name (without intermediate folders)
 dest_dir="$dest_root/$study_name"
 
-# EARLY CHECK: Stop immediately if destination directory is not empty
-# This saves time by avoiding all other validations if we'll fail anyway
+# EARLY CHECK: Stop immediately if destination directory is not empty (unless update mode)
 if [[ -d "$dest_dir" && "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
-    # Check if force_empty flag is set to override this check
-    if [[ "$force_empty" == true ]]; then
+    if [[ "$update_mode" == true ]]; then
+        log_info "🔄 Update mode: reusing existing destination at $dest_dir"
+        if [[ ! -d "$dest_dir/.datalad" ]]; then
+            log_error "❌ --update requires an existing DataLad dataset at destination: $dest_dir"
+            log_error "Create the dataset first or rerun without --update."
+            exit 1
+        fi
+    elif [[ "$force_empty" == true ]]; then
         log_warning "⚠️ DESTINATION DIRECTORY IS NOT EMPTY: $dest_dir"
         log_warning "🚫 Force-empty flag is set - proceeding anyway (will overwrite existing content)"
         log_warning "⚠️ This will remove all existing content in the destination directory"
@@ -1795,6 +1875,10 @@ else
         log_error "❌ Failed to resolve absolute path for destination directory: $dest_dir"
         exit 1
     }
+fi
+
+if [[ -d "$dest_dir/.datalad" ]]; then
+    superdataset_exists=true
 fi
 
 # Print the header
@@ -1882,7 +1966,11 @@ fi
 validate_arguments
 
 # Destination directory emptiness already checked earlier - skip redundant check
-log_info "✅ Destination directory verified as empty or non-existent"
+if [[ "$update_mode" == true && "$superdataset_exists" == true ]]; then
+    log_info "✅ Destination directory verified for incremental update"
+else
+    log_info "✅ Destination directory verified as empty or non-existent"
+fi
 
 # Check disk space
 log_info "🔍 Checking disk space requirements..."
@@ -1902,45 +1990,29 @@ fi
 # Check system resources
 check_system_resources
 
-# Create DataLad superdataset with git-annex configuration
-log_info "📂 Creating DataLad superdataset with git-annex configuration in $dest_dir..."
-log_info "🔧 This may take a moment - setting up DataLad infrastructure..."
-if ! safe_datalad create --force "$dest_dir"; then
-    log_error "❌ Failed to create DataLad superdataset. Exiting script."
-    exit 1
-fi
-log_info "✅ DataLad superdataset created successfully"
+# Create or reuse DataLad superdataset with git-annex configuration
+if [[ "$superdataset_exists" == true ]]; then
+    log_info "� Reusing existing DataLad superdataset at $dest_dir"
+    ensure_gitattributes_config "$dest_dir" false
+else
+    log_info "�📂 Creating DataLad superdataset with git-annex configuration in $dest_dir..."
+    log_info "🔧 This may take a moment - setting up DataLad infrastructure..."
+    if ! safe_datalad create --force "$dest_dir"; then
+        log_error "❌ Failed to create DataLad superdataset. Exiting script."
+        exit 1
+    fi
+    log_info "✅ DataLad superdataset created successfully"
 
-# Configure git-annex settings immediately after dataset creation
-log_info "⚙️ Configuring git-annex settings for large file handling..."
-log_info "📝 Setting up file size thresholds and metadata handling..."
-if [[ "$dry_run" != true ]]; then
-    (cd "$dest_dir" && {
-        # Configure git-annex: only large binary files go to annex, text files stay as regular files
-        echo "*.json annex.largefiles=nothing" > .gitattributes
-        echo "*.tsv annex.largefiles=nothing" >> .gitattributes
-        echo "*.bval annex.largefiles=nothing" >> .gitattributes
-        echo "*.bvec annex.largefiles=nothing" >> .gitattributes
-        echo "*.txt annex.largefiles=nothing" >> .gitattributes
-        echo "*.md annex.largefiles=nothing" >> .gitattributes
-        echo "*.py annex.largefiles=nothing" >> .gitattributes
-        echo "*.sh annex.largefiles=nothing" >> .gitattributes
-        echo "*.m annex.largefiles=nothing" >> .gitattributes
-        echo "README annex.largefiles=nothing" >> .gitattributes
-        echo "LICENSE annex.largefiles=nothing" >> .gitattributes
-        echo "CHANGES annex.largefiles=nothing" >> .gitattributes
-        echo ".DS_Store annex.largefiles=nothing" >> .gitattributes
-        echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
-        git add .gitattributes
-        git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
-    })
-fi
+    log_info "⚙️ Configuring git-annex settings for large file handling..."
+    log_info "📝 Setting up file size thresholds and metadata handling..."
+    ensure_gitattributes_config "$dest_dir" true
 
-# Save the initial commit
-log_info "📝 Saving initial commit for the superdataset..."
-if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
-    log_error "❌ Failed to save initial commit. Exiting script."
-    exit 1
+    log_info "📝 Saving initial commit for the superdataset..."
+    if ! safe_datalad save -m "Initial commit" -d "$dest_dir"; then
+        log_error "❌ Failed to save initial commit. Exiting script."
+        exit 1
+    fi
+    superdataset_exists=true
 fi
 
 # Create sub-datasets for each subject with git-annex configuration
@@ -1953,41 +2025,26 @@ for subject_dir in "$src_dir"/sub-*; do
     if [[ -d "$subject_dir" ]]; then
         subject_count=$((subject_count + 1))
         subject_name=$(basename "$subject_dir")
-        log_info "📁 [$subject_count/$total_subjects] Creating sub-dataset for subject: $subject_name"
-        if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
-            log_warning "⚠️ Failed to create sub-dataset for subject: $subject_name"
-            log_warning "This subject will be skipped, but conversion continues with other subjects"
-            continue  # Skip this subject and continue with the next one
-        fi
-        log_info "✅ [$subject_count/$total_subjects] Sub-dataset created: $subject_name"
+        if [[ -d "$dest_dir/$subject_name/.datalad" ]]; then
+            log_info "🔄 [$subject_count/$total_subjects] Sub-dataset already exists for subject: $subject_name"
+            ensure_gitattributes_config "$dest_dir/$subject_name" false
+            log_info "✅ [$subject_count/$total_subjects] Sub-dataset verified for update: $subject_name"
+        else
+            log_info "📁 [$subject_count/$total_subjects] Creating sub-dataset for subject: $subject_name"
+            if ! safe_datalad create -d "$dest_dir" "$dest_dir/$subject_name"; then
+                log_warning "⚠️ Failed to create sub-dataset for subject: $subject_name"
+                log_warning "This subject will be skipped, but conversion continues with other subjects"
+                continue  # Skip this subject and continue with the next one
+            fi
+            log_info "✅ [$subject_count/$total_subjects] Sub-dataset created: $subject_name"
 
-        # Configure git-annex settings for this sub-dataset too
-        log_info "⚙️ [$subject_count/$total_subjects] Configuring git-annex settings for sub-dataset: $subject_name"
-        if [[ "$dry_run" != true ]]; then
-            (cd "$dest_dir/$subject_name" && {
-                # Copy the same git-annex configuration to sub-dataset
-                echo "*.json annex.largefiles=nothing" > .gitattributes
-                echo "*.tsv annex.largefiles=nothing" >> .gitattributes
-                echo "*.bval annex.largefiles=nothing" >> .gitattributes
-                echo "*.bvec annex.largefiles=nothing" >> .gitattributes
-                echo "*.txt annex.largefiles=nothing" >> .gitattributes
-                echo "*.md annex.largefiles=nothing" >> .gitattributes
-                echo "*.py annex.largefiles=nothing" >> .gitattributes
-                echo "*.sh annex.largefiles=nothing" >> .gitattributes
-                echo "*.m annex.largefiles=nothing" >> .gitattributes
-                echo "README annex.largefiles=nothing" >> .gitattributes
-                echo "LICENSE annex.largefiles=nothing" >> .gitattributes
-                echo "CHANGES annex.largefiles=nothing" >> .gitattributes
-                echo ".DS_Store annex.largefiles=nothing" >> .gitattributes
-                echo "* annex.largefiles=(largerthan=1MB)" >> .gitattributes
-                git add .gitattributes
-                git commit -m "Configure git-annex: text files as regular files, large binaries in annex" || true
-            })
-        fi
+            log_info "⚙️ [$subject_count/$total_subjects] Configuring git-annex settings for sub-dataset: $subject_name"
+            ensure_gitattributes_config "$dest_dir/$subject_name" true
 
-        # Skip individual sub-dataset saving to avoid hanging
-        # The final save at the end will handle everything recursively
-        log_info "💾 Sub-dataset created for: $subject_name (will be saved with final commit)"
+            # Skip individual sub-dataset saving to avoid hanging
+            # The final save at the end will handle everything recursively
+            log_info "💾 Sub-dataset created for: $subject_name (will be saved with final commit)"
+        fi
         log_info "✅ Completed processing for subject: $subject_name"
     fi
 done
@@ -2041,7 +2098,11 @@ create_checkpoint "post_copy"
 log_info "📝 Saving all changes in the superdataset and sub-datasets..."
 log_info "🔄 This will process all files through git-annex - may take several minutes..."
 log_info "⏱️ Progress will be shown for each file being processed..."
-if ! safe_datalad save -m "Copied BIDS data and created sub-datasets" -d "$dest_dir" -r; then
+save_message="Copied BIDS data and created sub-datasets"
+if [[ "$update_mode" == true ]]; then
+    save_message="Updated BIDS data and refreshed sub-datasets"
+fi
+if ! safe_datalad save -m "$save_message" -d "$dest_dir" -r; then
     log_error "❌ Failed to save changes. Exiting script."
     exit 1
 fi
@@ -2162,6 +2223,9 @@ else
     log_info "   - Source: $src_dir"
     log_info "   - Destination: $dest_dir"
     log_info "   - Study: $study_name"
+    if [[ "$update_mode" == true ]]; then
+        log_info "   - Mode: Incremental update (--update)"
+    fi
     log_info "   - Log file: $LOGFILE"
     log_info "   - Conversion report: /tmp/conversion_report_${study_name}_*.md"
     log_info ""

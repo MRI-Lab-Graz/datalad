@@ -145,6 +145,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 | `--parallel-hash` | Use parallel processing for hash calculation | `false` |
 | `--force-empty` | Require destination directory to be empty (safety mode) | `false` |
 | `--fasttrack` | Skip checksum validation for faster conversion | `false` |
+| `--update` | Reuse existing DataLad dataset and ingest new/changed subjects | `false` |
 
 ### 📁 Directory Structure Requirements
 
@@ -215,6 +216,14 @@ your-study/
 ```
 
 **Result:** Combines fasttrack mode with parallel processing for maximum speed
+
+### Incremental Update (Add Newly Acquired Subjects)
+
+```bash
+./convert/bids2datalad.sh --update -s /data/my-study/rawdata -d /storage/datalad
+```
+
+**Result:** Reuses the existing DataLad dataset and only ingests new or changed subjects from the source BIDS directory.
 
 ### Preview Mode (Recommended First Run)
 
