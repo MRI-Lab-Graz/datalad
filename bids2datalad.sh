@@ -817,6 +817,201 @@ validate_integrity_enhanced() {
     return 0
 }
 
+# Function to clean GZIP headers for BIDS compliance
+clean_gzip_headers_if_needed() {
+    local target_dir="$1"
+    
+    log_info "🧹 Cleaning GZIP headers for BIDS compliance..."
+    log_info "📁 Scanning for .gz files with problematic headers in: $target_dir"
+    
+    # Find all .gz files recursively (compatible with older bash)
+    local gz_files=()
+    while IFS= read -r -d '' file; do
+        gz_files+=("$file")
+    done < <(find "$target_dir" -name "*.gz" -type f -print0 2>/dev/null)
+    
+    if [[ ${#gz_files[@]} -eq 0 ]]; then
+        log_info "ℹ️ No .gz files found to check"
+        return 0
+    fi
+    
+    local total_files=0
+    local cleaned_files=0
+    local errors=0
+    
+    log_info "🔍 Found ${#gz_files[@]} .gz files to check..."
+    
+    for gz_file in "${gz_files[@]}"; do
+        total_files=$((total_files + 1))
+        
+        # Check if file needs cleaning by examining the GZIP header
+        local needs_cleaning=false
+        local issues=()
+        
+        # Read first 10 bytes to check basic GZIP header
+        local header
+        if ! header=$(head -c 10 "$gz_file" 2>/dev/null | od -t x1 -A n | tr -d ' \n'); then
+            log_warning "⚠️ Cannot read header from: $(basename "$gz_file")"
+            errors=$((errors + 1))
+            continue
+        fi
+        
+        # Check if it's a valid GZIP file (magic bytes: 1f 8b)
+        if [[ ! "$header" =~ ^1f8b ]]; then
+            continue  # Not a GZIP file, skip
+        fi
+        
+        # Extract flags byte (4th byte, 0-indexed = position 6-7 in hex string)
+        local flags_hex="${header:6:2}"
+        local flags=$((0x$flags_hex))
+        
+        # Extract MTIME (bytes 4-7, positions 8-15 in hex string)
+        local mtime_hex="${header:8:8}"
+        # Convert little-endian hex to decimal
+        local mtime_le="${mtime_hex:6:2}${mtime_hex:4:2}${mtime_hex:2:2}${mtime_hex:0:2}"
+        local mtime=$((0x$mtime_le))
+        
+        # Check if MTIME is non-zero
+        if [[ $mtime -ne 0 ]]; then
+            needs_cleaning=true
+            issues+=("mtime=$mtime")
+        fi
+        
+        # Check if FNAME flag is set (bit 3, value 8)
+        if [[ $((flags & 8)) -ne 0 ]]; then
+            needs_cleaning=true
+            issues+=("filename")
+        fi
+        
+        # Check if FHCRC flag is set (bit 1, value 2)
+        if [[ $((flags & 2)) -ne 0 ]]; then
+            issues+=("crc")
+        fi
+        
+        if [[ "$needs_cleaning" == true ]]; then
+            if [[ "$dry_run" == true ]]; then
+                log_info "🧪 Would clean $(basename "$gz_file") ($(IFS=', '; echo "${issues[*]}"))"
+                cleaned_files=$((cleaned_files + 1))
+            else
+                # Use the existing Python tool for the actual cleaning
+                local temp_file="${gz_file}.tmp"
+                if python3 -c "
+import struct, sys, os
+
+def clean_gzip_header(input_file, output_file):
+    with open(input_file, 'rb') as f_in:
+        # Read and validate header
+        header = f_in.read(10)
+        if len(header) < 10 or header[:2] != b'\x1f\x8b' or header[2] != 0x08:
+            return False
+        
+        # Extract current flags and clear FNAME (bit 3) and FHCRC (bit 1)
+        old_flags = header[3]
+        new_flags = old_flags & ~0x08 & ~0x02  # Clear FNAME and FHCRC
+        
+        # Create new header with MTIME=0 and updated flags
+        new_header = bytearray(header)
+        new_header[3] = new_flags
+        new_header[4:8] = b'\x00\x00\x00\x00'  # MTIME = 0
+        
+        with open(output_file, 'wb') as f_out:
+            f_out.write(new_header)
+            
+            # Skip optional fields in input and copy rest
+            pos = 10
+            # Skip FEXTRA if present
+            if old_flags & 0x04:
+                f_in.seek(pos)
+                xlen_bytes = f_in.read(2)
+                if len(xlen_bytes) == 2:
+                    xlen = struct.unpack('<H', xlen_bytes)[0]
+                    f_out.write(xlen_bytes)
+                    extra_data = f_in.read(xlen)
+                    f_out.write(extra_data)
+                    pos += 2 + xlen
+            
+            # Skip FNAME if present (we're removing it)
+            if old_flags & 0x08:
+                f_in.seek(pos)
+                while True:
+                    b = f_in.read(1)
+                    if not b or b == b'\x00':
+                        pos += 1
+                        break
+                    pos += 1
+            
+            # Copy FCOMMENT if present and keeping it
+            if old_flags & 0x10:
+                f_in.seek(pos)
+                comment_start = pos
+                while True:
+                    b = f_in.read(1)
+                    if not b or b == b'\x00':
+                        pos += 1
+                        break
+                    pos += 1
+                # Copy FCOMMENT
+                f_in.seek(comment_start)
+                f_out.write(f_in.read(pos - comment_start))
+            
+            # Skip FHCRC if present (we're removing it)
+            if old_flags & 0x02:
+                pos += 2
+            
+            # Copy rest of file (compressed data)
+            f_in.seek(pos)
+            while True:
+                chunk = f_in.read(65536)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+    return True
+
+try:
+    if clean_gzip_header('$gz_file', '$temp_file'):
+        sys.exit(0)
+    else:
+        sys.exit(1)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null; then
+                    # Replace original with cleaned version
+                    if mv "$temp_file" "$gz_file"; then
+                        log_info "✅ Cleaned $(basename "$gz_file") ($(IFS=', '; echo "${issues[*]}"))"
+                        cleaned_files=$((cleaned_files + 1))
+                    else
+                        log_warning "⚠️ Failed to replace $(basename "$gz_file")"
+                        rm -f "$temp_file" 2>/dev/null || true
+                        errors=$((errors + 1))
+                    fi
+                else
+                    log_warning "⚠️ Failed to clean $(basename "$gz_file")"
+                    rm -f "$temp_file" 2>/dev/null || true
+                    errors=$((errors + 1))
+                fi
+            fi
+        fi
+    done
+    
+    # Summary
+    if [[ "$dry_run" == true ]]; then
+        log_info "🧪 Dry run complete: $total_files files checked, $cleaned_files would be cleaned"
+    else
+        if [[ $cleaned_files -gt 0 ]]; then
+            log_info "✅ GZIP header cleaning complete: $cleaned_files/$total_files files cleaned"
+        else
+            log_info "✅ All $total_files .gz files already have clean headers"
+        fi
+    fi
+    
+    if [[ $errors -gt 0 ]]; then
+        log_warning "⚠️ $errors files had errors during processing"
+    fi
+    
+    return 0
+}
+
 # Function to check if required dependencies are available
 check_dependencies() {
     local missing_deps=()
@@ -1702,7 +1897,7 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [-c config_file] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--update] [--cleanup dataset_path]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [-c config_file] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--update] [--no-gzheader-check] [--cleanup dataset_path]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
@@ -1718,6 +1913,7 @@ usage() {
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
     echo "  --quick-hash             Sample-based hash validation (faster, less thorough)" | tee /dev/fd/3
     echo "  --skip-hash-validation   Skip hash validation entirely (fastest, least safe)" | tee /dev/fd/3
+    echo "  --no-gzheader-check      Skip GZIP header cleaning (headers may cause BIDS warnings)" | tee /dev/fd/3
     echo "  --update                 Reuse existing DataLad dataset and ingest new/changed subjects" | tee /dev/fd/3
     echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
@@ -1902,6 +2098,7 @@ update_mode=false
 bids_config_file=""
 quick_hash=false
 skip_hash_validation=false
+clean_gzip_headers=true
 src_dir=""
 dest_root=""
 dest_dir=""
@@ -1955,6 +2152,9 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
             ;;
         --skip-hash-validation)
             skip_hash_validation=true
+            ;;
+        --no-gzheader-check)
+            clean_gzip_headers=false
             ;;
         --non-interactive)
             non_interactive=true
@@ -2319,6 +2519,11 @@ else
         fi
     fi
     log_info "✅ All files successfully copied and verified"
+fi
+
+# Clean GZIP headers for BIDS compliance (default behavior, can be disabled with --no-gzheader-check)
+if [[ "$clean_gzip_headers" == true ]]; then
+    clean_gzip_headers_if_needed "$dest_dir"
 fi
 
 # create_checkpoint
