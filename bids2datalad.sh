@@ -1,17 +1,6 @@
-    # Check git core.symlinks configuration
-    local symlinks_config=$(git config --show-origin core.symlinks 2>/dev/null | awk '{print $NF}')
-    if [[ "$symlinks_config" == "false" ]]; then
-        log_error "❌ Git config core.symlinks is set to false. Symlinks will NOT be created!"
-        log_error "This will break DataLad/git-annex functionality."
-        log_error "To fix, run one of the following commands:"
-        log_error "   git config --global --unset core.symlinks"
-        log_error "   # or to force correct behavior:"
-        log_error "   git config --global core.symlinks true"
-        exit 1
-    fi
 #!/bin/bash
 
-# PRODUCTION-READY BIDS TO DATALAD CONVERTER v2.1
+# PRODUCTION-READY BIDS TO DATALAD CONVERTER v2.2
 # Enhanced with atomic operations, lock files, and comprehensive error handling
 
 # Exit on any error for production safety
@@ -119,7 +108,7 @@ print_header() {
     echo "╠════════════════════════════════════════════════════════════════════════════════════╣" | tee /dev/fd/3
     echo -e "\033[1;33m"  # Set color to yellow
     echo "║                          🔬 BIDS to DataLad Converter 🔬                          ║" | tee /dev/fd/3
-    echo "║                              Production Version 2.1                               ║" | tee /dev/fd/3
+    echo "║                              Production Version 2.2                               ║" | tee /dev/fd/3
     echo -e "\033[1;32m"  # Set color to green
     echo "║                                $(date '+%Y-%m-%d %H:%M:%S')                                ║" | tee /dev/fd/3
     echo -e "\033[1;36m"  # Back to cyan
@@ -360,6 +349,18 @@ perform_preflight_checks() {
         return 1
     fi
     
+    # Check git core.symlinks configuration
+    local symlinks_config=$(git config --show-origin core.symlinks 2>/dev/null | awk '{print $NF}')
+    if [[ "$symlinks_config" == "false" ]]; then
+        log_error "❌ Git config core.symlinks is set to false. Symlinks will NOT be created!"
+        log_error "This will break DataLad/git-annex functionality."
+        log_error "To fix, run one of the following commands:"
+        log_error "   git config --global --unset core.symlinks"
+        log_error "   # or to force correct behavior:"
+        log_error "   git config --global core.symlinks true"
+        return 1
+    fi
+    
     # Check if running in a directory that already has git-annex
     if [[ -d "$dest_dir/.git/annex" ]]; then
         log_warning "⚠️ Destination directory already contains git-annex repository"
@@ -373,6 +374,7 @@ perform_preflight_checks() {
 # Function to validate BIDS format
 validate_bids() {
     local bids_rawdata_folder=$1
+    local config_file=${2:-""}
 
     log_info "🚀 Running BIDS Validator..."
 
@@ -386,6 +388,12 @@ validate_bids() {
         "--ignoreWarnings"
         "-v"
     )
+    
+    # Add configuration file if provided
+    if [[ -n "$config_file" && -f "$config_file" ]]; then
+        log_info "📋 Using BIDS validator configuration file: $config_file"
+        validator_command+=("-c" "$config_file")
+    fi
 
     # Run the BIDS Validator and capture output
     output=$( "${validator_command[@]}" 2>&1 )
@@ -570,127 +578,228 @@ validate_integrity_enhanced() {
     local src_dir=$1
     local dest_dir=$2
     
-    log_info "🔍 Performing comprehensive integrity validation..."
+    # Skip validation entirely if requested
+    if [[ "$skip_hash_validation" == true ]]; then
+        log_info "⚡ Skipping hash validation entirely (--skip-hash-validation)"
+        log_info "✅ File integrity validation skipped - proceeding with DataLad operations"
+        return 0
+    fi
+    
+    log_info "🔍 Performing integrity validation..."
     log_info "Source directory: $src_dir"
     log_info "Destination directory: $dest_dir"
     
-    # Only compare BIDS files, not DataLad metadata
-    local src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
-    # Count regular files in destination (should all be regular at this point)
-    local dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    # Handle SSH remote paths for counting
+    local src_count
+    local dest_count
+    
+    if is_ssh_path "$src_dir"; then
+        log_info "🌐 Counting files on SSH remote source..."
+        src_count=$(ssh ${src_dir%:*} "find '${src_dir#*:}' -type f \( -name '*.nii.gz' -o -name '*.nii' -o -name '*.json' -o -name '*.tsv' -o -name '*.bval' -o -name '*.bvec' \) | wc -l" 2>/dev/null || echo "0")
+    else
+        src_count=$(find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    fi
+    
+    if is_ssh_path "$dest_dir"; then
+        log_info "🌐 Counting files on SSH remote destination..."
+        dest_count=$(ssh ${dest_dir%:*} "find '${dest_dir#*:}' -type f \( -name '*.nii.gz' -o -name '*.nii' -o -name '*.json' -o -name '*.tsv' -o -name '*.bval' -o -name '*.bvec' \) | wc -l" 2>/dev/null || echo "0")
+    else
+        dest_count=$(find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | wc -l)
+    fi
     
     log_info "Source BIDS files: $src_count"
     log_info "Destination BIDS files: $dest_count"
     
-    # Debug: Show some example files found
-    log_info "Sample source files:"
-    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | head -3 | while read -r file; do
-        log_info "  - $file"
-    done
-    
-    log_info "Sample destination files:"
-    find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | head -3 | while read -r file; do
-        log_info "  - $file"
-    done
-    
     if [[ $src_count -ne $dest_count ]]; then
         log_error "❌ BIDS file count mismatch: source=$src_count, destination=$dest_count"
-        
-        # Debug: Show what's missing or extra
-        log_error "Investigating file count mismatch..."
-        
-        # Show files in source but not in destination
-        local temp_src=$(mktemp)
-        local temp_dest=$(mktemp)
-        find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | sed "s|$src_dir/||" | sort > "$temp_src"
-        find "$dest_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | sed "s|$dest_dir/||" | sort > "$temp_dest"
-        
-        local missing_in_dest=$(comm -23 "$temp_src" "$temp_dest" | wc -l)
-        local extra_in_dest=$(comm -13 "$temp_src" "$temp_dest" | wc -l)
-        
-        if [[ $missing_in_dest -gt 0 ]]; then
-            log_error "Files in source but missing in destination ($missing_in_dest):"
-            comm -23 "$temp_src" "$temp_dest" | head -5 | while read -r file; do
-                log_error "  - $file"
-            done
-        fi
-        
-        if [[ $extra_in_dest -gt 0 ]]; then
-            log_error "Files in destination but not in source ($extra_in_dest):"
-            comm -13 "$temp_src" "$temp_dest" | head -5 | while read -r file; do
-                log_error "  - $file"
-            done
-        fi
-        
-        rm -f "$temp_src" "$temp_dest"
         return 1
     fi
     
-    # Perform thorough file integrity check using checksums
-    log_info "🔍 Performing thorough file integrity verification..."
-    log_info "This may take a while depending on dataset size..."
-    local failed_files=0
-    local temp_file=$(mktemp)
-    
-    # Get all BIDS files from source
-    find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
-    local total_files=$(wc -l < "$temp_file")
-    local current_file=0
-    
-    log_info "Verifying $total_files BIDS files..."
-    
-    while IFS= read -r src_file; do
-        current_file=$((current_file + 1))
-        
-        # Show progress every 10 files or if dataset is small
-        if [[ $((current_file % 10)) -eq 0 ]] || [[ $total_files -lt 50 ]]; then
-            show_progress $current_file $total_files
+    # Quick hash mode - only check a sample of files
+    if [[ "$quick_hash" == true ]]; then
+        log_info "⚡ Quick hash mode: Sampling files for validation (faster)"
+        local sample_size=10
+        if [[ $src_count -lt 10 ]]; then
+            sample_size=$src_count
         fi
         
-        # Construct corresponding destination file path
-        local dest_file="${src_file/$src_dir/$dest_dir}"
+        log_info "🔍 Validating $sample_size sample files out of $src_count total..."
         
-        # Check if file exists in destination
-        if [[ ! -f "$dest_file" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ File missing in destination: $dest_file"
-            failed_files=$((failed_files + 1))
-            continue
+        # Create temporary file list
+        local temp_file=$(mktemp)
+        
+        if is_ssh_path "$src_dir"; then
+            ssh ${src_dir%:*} "find '${src_dir#*:}' -type f \( -name '*.nii.gz' -o -name '*.nii' -o -name '*.json' -o -name '*.tsv' -o -name '*.bval' -o -name '*.bvec' \)" | head -"$sample_size" > "$temp_file"
+        else
+            find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) | head -"$sample_size" > "$temp_file"
         fi
         
-        # Compare checksums (files should be regular files at this point)
-        local src_hash=$(compute_hash "$src_file")
-        local dest_hash=$(compute_hash "$dest_file")
+        local failed_files=0
+        local current_file=0
         
-        if [[ "$src_hash" != "$dest_hash" ]]; then
-            echo "" # Clear progress line before error
-            log_error "❌ Checksum mismatch for: $(basename "$src_file")"
-            log_error "   Source: $src_hash"
-            log_error "   Destination: $dest_hash"
-            failed_files=$((failed_files + 1))
+        while IFS= read -r src_file; do
+            current_file=$((current_file + 1))
+            
+            # Handle SSH paths for hash computation
+            local src_hash
+            local dest_hash
+            local dest_file
+            
+            if is_ssh_path "$src_dir"; then
+                dest_file="${src_file/$src_dir#*:/$dest_dir}"
+                src_hash=$(ssh ${src_dir%:*} "sha256sum '$src_file'" | awk '{print $1}')
+            else
+                dest_file="${src_file/$src_dir/$dest_dir}"
+                src_hash=$(compute_hash "$src_file")
+            fi
+            
+            if is_ssh_path "$dest_dir"; then
+                if ! ssh ${dest_dir%:*} "test -f '$dest_file'"; then
+                    log_error "❌ File missing in destination: $dest_file"
+                    failed_files=$((failed_files + 1))
+                    continue
+                fi
+                dest_hash=$(ssh ${dest_dir%:*} "sha256sum '$dest_file'" | awk '{print $1}')
+            else
+                if [[ ! -f "$dest_file" ]]; then
+                    log_error "❌ File missing in destination: $dest_file"
+                    failed_files=$((failed_files + 1))
+                    continue
+                fi
+                dest_hash=$(compute_hash "$dest_file")
+            fi
+            
+            if [[ "$src_hash" != "$dest_hash" ]]; then
+                log_error "❌ Checksum mismatch for: $(basename "$src_file")"
+                failed_files=$((failed_files + 1))
+            fi
+            
+            # Show progress
+            show_progress $current_file $sample_size
+        done < "$temp_file"
+        
+        echo "" # Clear progress line
+        rm "$temp_file"
+        
+        if [[ $failed_files -gt 0 ]]; then
+            log_error "❌ $failed_files sample files failed validation"
+            return 1
+        else
+            log_info "✅ All $sample_size sample files passed validation"
+            log_info "💡 Note: Quick validation only checked a sample. Use full validation for complete verification."
         fi
-    done < "$temp_file"
-    
-    # Clear progress line and show completion
-    echo ""
-    rm "$temp_file"
-    
-    if [[ $failed_files -gt 0 ]]; then
-        log_error "❌ $failed_files files failed integrity validation"
-        return 1
+        
     else
-        log_info "✅ All $total_files files passed integrity verification"
+        # Full hash validation (original behavior)
+        log_info "🔍 Performing thorough file integrity verification..."
+        log_info "This may take a while depending on dataset size..."
+        local failed_files=0
+        local temp_file=$(mktemp)
+        
+        # Get all BIDS files from source
+        if is_ssh_path "$src_dir"; then
+            ssh ${src_dir%:*} "find '${src_dir#*:}' -type f \( -name '*.nii.gz' -o -name '*.nii' -o -name '*.json' -o -name '*.tsv' -o -name '*.bval' -o -name '*.bvec' \)" > "$temp_file"
+        else
+            find "$src_dir" -type f \( -name "*.nii.gz" -o -name "*.nii" -o -name "*.json" -o -name "*.tsv" -o -name "*.bval" -o -name "*.bvec" \) > "$temp_file"
+        fi
+        
+        local total_files=$(wc -l < "$temp_file")
+        local current_file=0
+        
+        log_info "Verifying $total_files BIDS files..."
+        
+        while IFS= read -r src_file; do
+            current_file=$((current_file + 1))
+            
+            # Show progress every 50 files or if dataset is small
+            if [[ $((current_file % 50)) -eq 0 ]] || [[ $total_files -lt 100 ]]; then
+                show_progress $current_file $total_files
+            fi
+            
+            # Handle SSH paths for hash computation (similar to quick mode)
+            local src_hash
+            local dest_hash  
+            local dest_file
+            
+            if is_ssh_path "$src_dir"; then
+                dest_file="${src_file/$src_dir#*:/$dest_dir}"
+                src_hash=$(ssh ${src_dir%:*} "sha256sum '$src_file'" | awk '{print $1}')
+            else
+                dest_file="${src_file/$src_dir/$dest_dir}"
+                src_hash=$(compute_hash "$src_file")
+            fi
+            
+            if is_ssh_path "$dest_dir"; then
+                if ! ssh ${dest_dir%:*} "test -f '$dest_file'"; then
+                    echo "" # Clear progress line before error
+                    log_error "❌ File missing in destination: $dest_file"
+                    failed_files=$((failed_files + 1))
+                    continue
+                fi
+                dest_hash=$(ssh ${dest_dir%:*} "sha256sum '$dest_file'" | awk '{print $1}')
+            else
+                if [[ ! -f "$dest_file" ]]; then
+                    echo "" # Clear progress line before error
+                    log_error "❌ File missing in destination: $dest_file"
+                    failed_files=$((failed_files + 1))
+                    continue
+                fi
+                dest_hash=$(compute_hash "$dest_file")
+            fi
+            
+            if [[ "$src_hash" != "$dest_hash" ]]; then
+                echo "" # Clear progress line before error
+                log_error "❌ Checksum mismatch for: $(basename "$src_file")"
+                log_error "   Source: $src_hash"
+                log_error "   Destination: $dest_hash"
+                failed_files=$((failed_files + 1))
+            fi
+        done < "$temp_file"
+        
+        # Clear progress line and show completion
+        echo ""
+        rm "$temp_file"
+        
+        if [[ $failed_files -gt 0 ]]; then
+            log_error "❌ $failed_files files failed integrity validation"
+            return 1
+        else
+            log_info "✅ All $total_files files passed integrity verification"
+        fi
     fi
     
     # Check if essential BIDS files exist in destination
-    if [[ ! -f "$dest_dir/dataset_description.json" ]]; then
+    local dataset_desc_exists=false
+    if is_ssh_path "$dest_dir"; then
+        if ssh ${dest_dir%:*} "test -f '${dest_dir#*:}/dataset_description.json'"; then
+            dataset_desc_exists=true
+        fi
+    else
+        if [[ -f "$dest_dir/dataset_description.json" ]]; then
+            dataset_desc_exists=true
+        fi
+    fi
+    
+    if [[ "$dataset_desc_exists" == false ]]; then
         log_error "❌ dataset_description.json missing in destination"
         return 1
     fi
     
     # Verify subject directories
-    local src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
-    local dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    local src_subjects
+    local dest_subjects
+    
+    if is_ssh_path "$src_dir"; then
+        src_subjects=$(ssh ${src_dir%:*} "find '${src_dir#*:}' -maxdepth 1 -name 'sub-*' -type d | wc -l")
+    else
+        src_subjects=$(find "$src_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    fi
+    
+    if is_ssh_path "$dest_dir"; then
+        dest_subjects=$(ssh ${dest_dir%:*} "find '${dest_dir#*:}' -maxdepth 1 -name 'sub-*' -type d | wc -l")
+    else
+        dest_subjects=$(find "$dest_dir" -maxdepth 1 -name "sub-*" -type d | wc -l)
+    fi
     
     if [[ $src_subjects -ne $dest_subjects ]]; then
         log_error "❌ Subject directory count mismatch: source=$src_subjects, destination=$dest_subjects"
@@ -698,7 +807,11 @@ validate_integrity_enhanced() {
     fi
     
     log_info "✅ Comprehensive integrity validation passed"
-    log_info "✅ All $src_count BIDS files successfully verified with checksums"
+    if [[ "$quick_hash" == true ]]; then
+        log_info "✅ Sample-based verification completed successfully"
+    else
+        log_info "✅ All $src_count BIDS files successfully verified with checksums"
+    fi
     log_info "✅ All $src_subjects subject directories created"
     
     return 0
@@ -778,48 +891,94 @@ show_progress() {
     printf "] %d%% (%d/%d)" $percentage $current $total
 }
 
-# Function to copy files with progress
+# Function to detect if path is SSH remote
+is_ssh_path() {
+    local path=$1
+    if [[ "$path" =~ ^[^@]+@[^:]+:.+ ]]; then
+        return 0  # Is SSH path
+    else
+        return 1  # Is local path
+    fi
+}
+
+# Function to copy files with progress (supports SSH remotes)
 copy_with_progress() {
     local src_dir=$1
     local dest_dir=$2
     
+    # Detect if we're dealing with SSH paths
+    local src_is_ssh=false
+    local dest_is_ssh=false
+    
+    if is_ssh_path "$src_dir"; then
+        src_is_ssh=true
+        log_info "🌐 Source is SSH remote: $src_dir"
+    fi
+    
+    if is_ssh_path "$dest_dir"; then
+        dest_is_ssh=true
+        log_info "🌐 Destination is SSH remote: $dest_dir"
+    fi
+    
+    # Count files (handle SSH remotes)
     log_info "📁 Counting files to copy (BIDS files only)..."
-    local total_files=$(find "$src_dir" -type f ! -name ".DS_Store" ! -name "*.log" ! -name "conversion_*" ! -name "RECOVERY_*" ! -name "checkpoint_*" | wc -l)
+    local total_files
+    if [[ "$src_is_ssh" == true ]]; then
+        # Count files on remote SSH server
+        total_files=$(ssh ${src_dir%:*} "find '${src_dir#*:}' -type f ! -name '.DS_Store' ! -name '*.log' ! -name 'conversion_*' ! -name 'RECOVERY_*' ! -name 'checkpoint_*' 2>/dev/null | wc -l" 2>/dev/null || echo "0")
+    else
+        total_files=$(find "$src_dir" -type f ! -name ".DS_Store" ! -name "*.log" ! -name "conversion_*" ! -name "RECOVERY_*" ! -name "checkpoint_*" | wc -l)
+    fi
     log_info "Found $total_files BIDS files to copy (excluding system and log files)"
     
     log_info "📁 Copying BIDS files from $src_dir to $dest_dir..."
     log_info "🚫 Excluding: .DS_Store, *.log, conversion_*, RECOVERY_*, checkpoint_* files"
     log_info "🎯 Only BIDS-compliant files will be copied to maintain dataset validity"
     
-    # Check disk space before starting copy
-    check_disk_space_status "$dest_dir"
+    # Check disk space before starting copy (only for local destinations)
+    if [[ "$dest_is_ssh" == false ]]; then
+        check_disk_space_status "$dest_dir"
+    else
+        log_info "⚠️ Skipping disk space check for SSH remote destination"
+    fi
     
-    # Use rsync with progress if available, otherwise fallback to basic rsync
+    # Use rsync with SSH support
     # Exclude non-BIDS files explicitly to maintain BIDS compliance
     # Use fasttrack mode (skip checksums) if requested
     local exclude_options="--exclude=.DS_Store --exclude=*.log --exclude=conversion_* --exclude=RECOVERY_* --exclude=checkpoint_*"
+    
+    # Add SSH options for better performance and reliability
+    local ssh_options=""
+    if [[ "$src_is_ssh" == true || "$dest_is_ssh" == true ]]; then
+        ssh_options="-e 'ssh -o Compression=yes -o ConnectTimeout=30 -o ServerAliveInterval=60'"
+        log_info "🔒 Using SSH with compression and keepalive options"
+    fi
     
     if [[ "$fasttrack" == "true" ]]; then
         log_info "⚡ Fasttrack mode: Skipping checksum validation for speed"
         log_info "🚀 Starting BIDS file copy operation..."
         if rsync --help | grep -q "progress" 2>/dev/null; then
-            rsync -av --progress $exclude_options "$src_dir/" "$dest_dir/"
+            eval "rsync -av --progress $ssh_options $exclude_options '$src_dir/' '$dest_dir/'"
         else
-            rsync -av $exclude_options "$src_dir/" "$dest_dir/"
+            eval "rsync -av $ssh_options $exclude_options '$src_dir/' '$dest_dir/'"
         fi
     else
         log_info "🔍 Standard mode: Using checksum validation for data integrity"
         log_info "🚀 Starting BIDS file copy operation with checksum verification..."
         if rsync --help | grep -q "progress" 2>/dev/null; then
-            rsync -av --progress --checksum $exclude_options "$src_dir/" "$dest_dir/"
+            eval "rsync -av --progress --checksum $ssh_options $exclude_options '$src_dir/' '$dest_dir/'"
         else
-            rsync -av --checksum $exclude_options "$src_dir/" "$dest_dir/"
+            eval "rsync -av --checksum $ssh_options $exclude_options '$src_dir/' '$dest_dir/'"
         fi
     fi
     
-    # Check disk space after copy
-    log_info "✅ File copy completed, checking final disk space..."
-    check_disk_space_status "$dest_dir"
+    # Check disk space after copy (only for local destinations)
+    if [[ "$dest_is_ssh" == false ]]; then
+        log_info "✅ File copy completed, checking final disk space..."
+        check_disk_space_status "$dest_dir"
+    else
+        log_info "✅ SSH file copy completed"
+    fi
 }
 
 # Function to ensure git-annex configuration without clobbering existing settings
@@ -1121,7 +1280,7 @@ create_conversion_report() {
 # DataLad Conversion Report
 
 **Generated:** $(date '+%Y-%m-%d %H:%M:%S')  
-**Script Version:** 2.1  
+**Script Version:** 2.2  
 **Host:** $(hostname)  
 **User:** $(whoami)  
 
@@ -1178,7 +1337,7 @@ datalad status -d "$dest_dir"
 \`\`\`
 
 ---
-*Report generated by BIDS to DataLad Conversion Tool v2.1*
+*Report generated by BIDS to DataLad Conversion Tool v2.2*
 EOF
 
     log_info "✅ Conversion report created: $report_file"
@@ -1543,12 +1702,13 @@ safe_subdataset_operation() {
 
 # Usage function
 usage() {
-    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--update] [--cleanup dataset_path]" | tee /dev/fd/3
+    echo "Usage: $0 [-h] [-s src_dir] [-d dest_dir] [-c config_file] [--skip_bids_validation] [--dry-run] [--backup] [--parallel-hash] [--force-empty] [--fasttrack] [--non-interactive] [--update] [--cleanup dataset_path]" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
     echo "Options:" | tee /dev/fd/3
     echo "  -h                       Show this help message" | tee /dev/fd/3
     echo "  -s src_dir               Source directory containing BIDS data" | tee /dev/fd/3
     echo "  -d dest_dir              Destination directory for DataLad datasets" | tee /dev/fd/3
+    echo "  -c config_file           BIDS validator configuration file (JSON format)" | tee /dev/fd/3
     echo "  --skip_bids_validation   Skip initial and final BIDS validation" | tee /dev/fd/3
     echo "  --dry-run                Show what would be done without executing" | tee /dev/fd/3
     echo "  --backup                 Create backup of destination before overwriting" | tee /dev/fd/3
@@ -1556,6 +1716,8 @@ usage() {
     echo "  --force-empty            Overwrite non-empty destination directory (DANGEROUS)" | tee /dev/fd/3
     echo "  --non-interactive        Run without interactive prompts (for remote/automated use)" | tee /dev/fd/3
     echo "  --fasttrack              Speed up conversion by skipping checksum validation" | tee /dev/fd/3
+    echo "  --quick-hash             Sample-based hash validation (faster, less thorough)" | tee /dev/fd/3
+    echo "  --skip-hash-validation   Skip hash validation entirely (fastest, least safe)" | tee /dev/fd/3
     echo "  --update                 Reuse existing DataLad dataset and ingest new/changed subjects" | tee /dev/fd/3
     echo "  --cleanup dataset_path   Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
@@ -1582,6 +1744,9 @@ usage() {
     echo "  # Creates: /path/to/destination/study1_rawdata/" | tee /dev/fd/3
     echo "  # Files stored in git-annex, use 'datalad get' to access" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
+    echo "  $0 -s /path/to/bids_data -d /path/to/destination -c /path/to/bids_config.json" | tee /dev/fd/3
+    echo "  # Use custom BIDS validator configuration to ignore specific warnings/errors" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
     echo "  $0 --force-empty -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
     echo "  # Creates: /path/to/destination/bids_data/" | tee /dev/fd/3
     echo "  # Aborts if destination is not empty" | tee /dev/fd/3
@@ -1597,6 +1762,20 @@ usage() {
     echo "  $0 --cleanup /path/to/dataset/to/remove" | tee /dev/fd/3
     echo "  # Safely remove a DataLad dataset with proper cleanup" | tee /dev/fd/3
     echo "" | tee /dev/fd/3
+    echo "SSH Remote Usage:" | tee /dev/fd/3
+    echo "  $0 -s user@server1:/path/to/bids_data -d /local/destination" | tee /dev/fd/3
+    echo "  # Copy from SSH remote source to local destination" | tee /dev/fd/3
+    echo "  $0 -s /local/bids_data -d user@server2:/path/to/destination" | tee /dev/fd/3
+    echo "  # Copy from local source to SSH remote destination" | tee /dev/fd/3
+    echo "  $0 -s user@server1:/path/to/bids_data -d user@server2:/path/to/destination" | tee /dev/fd/3
+    echo "  # Copy between two SSH remote servers (through local machine)" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "Performance Options:" | tee /dev/fd/3
+    echo "  $0 --fasttrack --skip-hash-validation -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Fastest possible conversion (least safe)" | tee /dev/fd/3
+    echo "  $0 --quick-hash -s /path/to/bids_data -d /path/to/destination" | tee /dev/fd/3
+    echo "  # Balanced speed/safety - sample-based hash validation" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
     echo "Post-conversion usage:" | tee /dev/fd/3
     echo "  datalad get -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
     echo "  datalad drop -d /path/to/destination/study_name sub-01/func/sub-01_task-rest_bold.nii.gz" | tee /dev/fd/3
@@ -1604,6 +1783,18 @@ usage() {
     echo "Cleanup usage:" | tee /dev/fd/3
     echo "  # When you can't delete a DataLad dataset with rm:" | tee /dev/fd/3
     echo "  $0 --cleanup /path/to/problematic/dataset" | tee /dev/fd/3
+    echo "" | tee /dev/fd/3
+    echo "BIDS Validator Configuration:" | tee /dev/fd/3
+    echo "  - The -c option allows you to provide a JSON configuration file" | tee /dev/fd/3
+    echo "  - Configuration can ignore, warn, or error on specific BIDS issues" | tee /dev/fd/3
+    echo "  - Example config file:" | tee /dev/fd/3
+    echo '    {' | tee /dev/fd/3
+    echo '      "ignore": [' | tee /dev/fd/3
+    echo '        {"code": "JSON_KEY_RECOMMENDED", "location": "/T1w.json"}' | tee /dev/fd/3
+    echo '      ],' | tee /dev/fd/3
+    echo '      "warning": [],' | tee /dev/fd/3
+    echo '      "error": [{"code": "NO_AUTHORS"}]' | tee /dev/fd/3
+    echo '    }' | tee /dev/fd/3
     exit 1
 }
 
@@ -1708,6 +1899,9 @@ non_interactive=false
 cleanup_mode=false
 cleanup_dataset_path=""
 update_mode=false
+bids_config_file=""
+quick_hash=false
+skip_hash_validation=false
 src_dir=""
 dest_root=""
 dest_dir=""
@@ -1729,6 +1923,14 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
             shift
             dest_root="$1"
             ;;
+        -c)
+            shift
+            bids_config_file="$1"
+            if [[ ! -f "$bids_config_file" ]]; then
+                log_error "❌ BIDS configuration file not found: $bids_config_file"
+                exit 1
+            fi
+            ;;
         --skip_bids_validation)
             skip_bids_validation=true
             ;;
@@ -1747,6 +1949,12 @@ while [[ $# -gt 0 && "$1" == -* ]]; do
             ;;
         --fasttrack)
             fasttrack=true
+            ;;
+        --quick-hash)
+            quick_hash=true
+            ;;
+        --skip-hash-validation)
+            skip_hash_validation=true
             ;;
         --non-interactive)
             non_interactive=true
@@ -1956,7 +2164,7 @@ fi
 
 # Validate BIDS dataset if validation is not skipped
 if [ "$skip_bids_validation" = false ]; then
-    if ! validate_bids "$src_dir"; then
+    if ! validate_bids "$src_dir" "$bids_config_file"; then
         log_error "❌ BIDS validation failed. Exiting script."
         exit 1
     fi
@@ -2081,14 +2289,36 @@ else
     
     # Validate file integrity IMMEDIATELY after copying, before ANY DataLad operations
     # This is crucial because we need to verify files as regular files, not symlinks
-    log_info "🔍 Performing comprehensive integrity validation..."
-    log_info "📋 Validating that all files were copied correctly before DataLad operations..."
-    if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
-        log_error "❌ File integrity validation failed after copying"
-        log_error "❌ Files do not match between source and destination"
-        exit 1
+    # Skip validation if SSH paths are involved and skip validation is enabled
+    if [[ "$skip_hash_validation" == true ]]; then
+        log_info "⚡ Skipping file integrity validation as requested"
+    elif is_ssh_path "$src_dir" || is_ssh_path "$dest_dir"; then
+        if [[ "$quick_hash" == true ]]; then
+            log_info "🔍 Performing quick integrity validation for SSH transfer..."
+            if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
+                log_error "❌ File integrity validation failed after SSH copying"
+                log_error "❌ Files do not match between source and destination"
+                exit 1
+            fi
+        else
+            log_info "🌐 SSH transfer detected - consider using --quick-hash or --skip-hash-validation for better performance"
+            log_info "🔍 Performing comprehensive integrity validation..."
+            if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
+                log_error "❌ File integrity validation failed after SSH copying"
+                log_error "❌ Files do not match between source and destination"
+                exit 1
+            fi
+        fi
+    else
+        log_info "🔍 Performing comprehensive integrity validation..."
+        log_info "📋 Validating that all files were copied correctly before DataLad operations..."
+        if ! validate_integrity_enhanced "$src_dir" "$dest_dir"; then
+            log_error "❌ File integrity validation failed after copying"
+            log_error "❌ Files do not match between source and destination"
+            exit 1
+        fi
     fi
-    log_info "✅ All files successfully copied and verified with checksums"
+    log_info "✅ All files successfully copied and verified"
 fi
 
 # create_checkpoint
@@ -2189,7 +2419,7 @@ else
         log_info "💡 Note: Warnings about git-annex symlinks are expected and normal for DataLad datasets"
         
         # Add timeout to prevent hanging
-        if timeout 300s validate_bids "$dest_dir"; then
+        if timeout 300s validate_bids "$dest_dir" "$bids_config_file"; then
             log_success "✅ Final BIDS validation PASSED - Converted dataset is valid!"
             log_success "🎉 Dataset structure and metadata follow BIDS specification"
         else
