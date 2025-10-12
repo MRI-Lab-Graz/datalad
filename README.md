@@ -1,7 +1,24 @@
 # 🧠 BIDS to DataLad Conversion Tool
 
-[![Version](https://img.shields.io/badge/version-2.2-blue.svg)](https://github.com/MRI-Lab-Graz/datalad)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-2.2-blue.svg)](https://github.com/MRI-Lab-Graz/## 📁 Repository Structure
+
+```
+datalad/
+├── bids2datalad.sh           # Main conversion script
+├── gz_header_cleaner.py      # GZIP header cleaning tool (standalone)
+├── compress_sourcedata.sh    # Helper script for data compression
+├── README.md                 # This file
+└── test/                     # Test datasets
+    └── 107/                  # Example BIDS dataset
+```
+
+### Main Scripts
+
+- **`bids2datalad.sh`** - Main conversion script with full DataLad integration
+- **`gz_header_cleaner.py`** - Standalone tool for cleaning GZIP headers (also integrated in main script)
+- **`compress_sourcedata.sh`** - Helper script for compressing BIDS datasets
+
+## 🔧 Usage(https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#prerequisites)
 [![Production Ready](https://img.shields.io/badge/production-ready-brightgreen.svg)](#production-ready-features)
 
@@ -9,10 +26,11 @@ A robust, production-ready script for converting BIDS-formatted MRI datasets int
 
 ## ✨ Features
 
-- 🔍 **BIDS Validation** - Automatic validation using the official BIDS validator
+- 🔍 **BIDS Validation** - Automatic validation using the official BIDS validator with custom configuration support
 - 📂 **Hierarchical DataLad Structure** - Creates superdatasets with subject-level subdatasets  
 - 🗂️ **Git-Annex Storage Optimization** - Eliminates file duplication using git-annex
 - 🔐 **Comprehensive Data Integrity** - SHA-256 checksum verification of every file
+- 🧹 **GZIP Header Cleaning** - Automatic removal of problematic GZIP metadata for BIDS compliance (enabled by default)
 - ⚡ **Fasttrack Mode** - Skip checksum validation for faster conversions
 - 🚀 **Performance Optimizations** - Parallel hash calculation and progress monitoring
 - 🔍 **Real-time Transparency** - All processes run in foreground with live status updates
@@ -26,6 +44,8 @@ A robust, production-ready script for converting BIDS-formatted MRI datasets int
 - 💻 **Resource Monitoring** - Disk space, memory, and CPU monitoring
 - 🔄 **Atomic Operations** - Fail-safe copying with rollback capabilities
 - 🧹 **Smart .DS_Store Cleanup** - Automatic exclusion of macOS system files
+- 🌐 **SSH Remote Support** - Copy from/to SSH remote servers seamlessly
+- 🔄 **Incremental Updates** - Add new subjects to existing DataLad datasets
 
 ## 🏭 Production-Ready Features
 
@@ -46,16 +66,19 @@ A robust, production-ready script for converting BIDS-formatted MRI datasets int
 
 ```bash
 # Basic conversion with git-annex optimization
-./convert/bids2datalad.sh -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./bids2datalad.sh -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # Fast conversion without checksum validation (recommended for large datasets)
-./convert/bids2datalad.sh --fasttrack -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./bids2datalad.sh --fasttrack -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # With all safety features enabled
-./convert/bids2datalad.sh --backup --parallel-hash -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./bids2datalad.sh --backup --parallel-hash -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # Preview what would be done (dry run)
-./convert/bids2datalad.sh --dry-run -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./bids2datalad.sh --dry-run -s /path/to/bids_rawdata -d /path/to/datalad_destination
+
+# Skip GZIP header cleaning if needed (enabled by default)
+./bids2datalad.sh --no-gzheader-check -s /path/to/bids_rawdata -d /path/to/datalad_destination
 ```
 
 ## 💾 Storage Efficiency
@@ -126,10 +149,29 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 # shasum is pre-installed on macOS
 ```
 
-## 🔧 Usage
+## � Repository Structure
+
+```
+datalad/
+├── bids2datalad.sh           # Main conversion script
+├── gz_header_cleaner.py      # GZIP header cleaning tool (standalone)
+├── compress_sourcedata.sh    # Helper script for data compression
+├── gz_header_cleaner.py      # Python tool for GZIP header cleaning
+├── README.md                 # This file
+└── test/                     # Test datasets
+    └── 107/                  # Example BIDS dataset
+```
+
+### Main Scripts
+
+- **`bids2datalad.sh`** - Main conversion script with full DataLad integration
+- **`gz_header_cleaner.py`** - Standalone tool for cleaning GZIP headers (also integrated in main script)
+- **`compress_sourcedata.sh`** - Helper script for compressing BIDS datasets
+
+## �🔧 Usage
 
 ```bash
-./convert/bids2datalad.sh [OPTIONS] -s SOURCE_DIR -d DESTINATION_DIR
+./bids2datalad.sh [OPTIONS] -s SOURCE_DIR -d DESTINATION_DIR
 ```
 
 ### Command Line Options
@@ -139,13 +181,19 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 | `-h` | Show help message and exit | - |
 | `-s SOURCE_DIR` | **Required.** Source directory containing BIDS data | - |
 | `-d DEST_DIR` | **Required.** Destination directory for DataLad datasets | - |
+| `-c CONFIG_FILE` | BIDS validator configuration file (JSON format) | - |
 | `--skip_bids_validation` | Skip BIDS format validation | `false` |
 | `--dry-run` | Show what would be done without executing | `false` |
 | `--backup` | Create backup of destination before overwriting | `false` |
 | `--parallel-hash` | Use parallel processing for hash calculation | `false` |
-| `--force-empty` | Require destination directory to be empty (safety mode) | `false` |
-| `--fasttrack` | Skip checksum validation for faster conversion | `false` |
+| `--force-empty` | Overwrite non-empty destination directory (DANGEROUS) | `false` |
+| `--fasttrack` | Speed up conversion by skipping checksum validation | `false` |
+| `--quick-hash` | Sample-based hash validation (faster, less thorough) | `false` |
+| `--skip-hash-validation` | Skip hash validation entirely (fastest, least safe) | `false` |
+| `--no-gzheader-check` | Skip GZIP header cleaning (headers may cause BIDS warnings) | `false` |
+| `--non-interactive` | Run without interactive prompts (for remote/automated use) | `false` |
 | `--update` | Reuse existing DataLad dataset and ingest new/changed subjects | `false` |
+| `--cleanup DATASET_PATH` | Safely remove a DataLad dataset with proper cleanup | - |
 
 ### 📁 Directory Structure Requirements
 
@@ -172,15 +220,34 @@ your-study/
 ### Basic Conversion
 
 ```bash
-./convert/bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Creates `/storage/datalad/my-study/rawdata/` with DataLad structure
 
+### BIDS Validator Configuration
+
+```bash
+./bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad -c /path/to/bids_config.json
+```
+
+**Result:** Use custom BIDS validator configuration to ignore specific warnings/errors
+
+**Example config file:**
+```json
+{
+  "ignore": [
+    {"code": "JSON_KEY_RECOMMENDED", "location": "/T1w.json"}
+  ],
+  "warning": [],
+  "error": [{"code": "NO_AUTHORS"}]
+}
+```
+
 ### Different Source Directory Names
 
 ```bash
-./convert/bids2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
+./bids2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
 ```
 
 **Result:** Creates `/storage/datalad/my-study/bids_data/` with DataLad structure
@@ -188,15 +255,30 @@ your-study/
 ### Safe Conversion with Backup
 
 ```bash
-./convert/bids2datalad.sh --backup -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --backup -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Creates backup before conversion if destination exists
 
+### SSH Remote Access
+
+```bash
+# Copy from SSH remote source to local destination
+./bids2datalad.sh -s user@server:/path/to/bids_data -d /local/destination
+
+# Copy from local source to SSH remote destination  
+./bids2datalad.sh -s /local/bids_data -d user@server:/path/to/destination
+
+# Use quick hash validation for SSH (recommended for better performance)
+./bids2datalad.sh --quick-hash -s user@server:/path/to/bids_data -d /local/destination
+```
+
+**Result:** Seamlessly copy from/to remote servers using rsync over SSH
+
 ### Fast Conversion with Fasttrack Mode
 
 ```bash
-./convert/bids2datalad.sh --fasttrack -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --fasttrack -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Skips checksum validation for significantly faster processing (recommended for large datasets)
@@ -204,7 +286,7 @@ your-study/
 ### Fast Conversion with Parallel Processing
 
 ```bash
-./convert/bids2datalad.sh --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Uses parallel hash calculation for faster verification
@@ -212,7 +294,7 @@ your-study/
 ### Ultimate Speed Conversion
 
 ```bash
-./convert/bids2datalad.sh --fasttrack --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --fasttrack --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Combines fasttrack mode with parallel processing for maximum speed
@@ -220,7 +302,7 @@ your-study/
 ### Incremental Update (Add Newly Acquired Subjects)
 
 ```bash
-./convert/bids2datalad.sh --update -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --update -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Reuses the existing DataLad dataset and only ingests new or changed subjects from the source BIDS directory.
@@ -228,7 +310,7 @@ your-study/
 ### Preview Mode (Recommended First Run)
 
 ```bash
-./convert/bids2datalad.sh --dry-run -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --dry-run -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Shows what would be done without making changes
@@ -236,7 +318,7 @@ your-study/
 ### Skip Validation (For Pre-validated Datasets)
 
 ```bash
-./convert/bids2datalad.sh --skip_bids_validation -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --skip_bids_validation -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Skips BIDS validation step
@@ -244,18 +326,195 @@ your-study/
 ### Safe Mode (Force Empty Directory)
 
 ```bash
-./convert/bids2datalad.sh --force-empty -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --force-empty -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Aborts if destination directory is not empty (safest option)
 
+### Skip GZIP Header Cleaning
+
+```bash
+./bids2datalad.sh --no-gzheader-check -s /data/my-study/rawdata -d /storage/datalad
+```
+
+**Result:** Disables automatic GZIP header cleaning (may cause BIDS validator warnings)
+
 ### Full-Featured Conversion
 
 ```bash
-./convert/bids2datalad.sh --backup --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./bids2datalad.sh --backup --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Maximum safety with backup and parallel processing
+
+### Real-Time Progress Monitoring
+
+All operations now provide live status updates:
+
+```text
+📁 Counting files to copy (excluding .DS_Store files)...
+Found 4,494 files to copy (excluding system files)
+📁 Copying files from /source to /destination...
+⚡ Fasttrack mode: Skipping checksum validation for speed
+🚀 Starting file copy operation...
+[====================] 100% (4,494/4,494 files)
+✅ File copy completed, checking final disk space...
+💾 Available disk space: 142GB
+
+📂 Creating sub-datasets for each subject...
+📊 Found 24 subjects to process
+📁 [1/24] Creating sub-dataset for subject: sub-01
+✅ [1/24] Sub-dataset created: sub-01
+⚙️ [1/24] Configuring git-annex settings for sub-dataset: sub-01
+...
+```
+
+## 🧹 GZIP Header Cleaner
+
+### Overview
+
+The BIDS to DataLad conversion tool includes automatic GZIP header cleaning (enabled by default) to ensure BIDS compliance. Some GZIP files contain metadata in their headers (timestamps, original filenames) that can cause BIDS validator warnings. This tool removes these problematic fields while preserving the compressed content.
+
+### What It Does
+
+The GZIP header cleaner:
+- ✅ Removes **MTIME** (modification timestamp) - sets to 0
+- ✅ Removes **FNAME** (original filename) - eliminates the field
+- ✅ Removes **FHCRC** (header CRC) - removed when other fields change
+- ✅ Preserves **FEXTRA** and **FCOMMENT** fields (kept unchanged)
+- ✅ Maintains file content integrity - only header metadata is modified
+
+### Integration with Main Script
+
+GZIP header cleaning is **enabled by default** during conversion:
+
+```bash
+# Default behavior - headers are automatically cleaned
+./bids2datalad.sh -s /path/to/bids_data -d /path/to/destination
+
+# Disable header cleaning if needed
+./bids2datalad.sh --no-gzheader-check -s /path/to/bids_data -d /path/to/destination
+```
+
+The cleaning happens after files are copied but before DataLad operations, ensuring:
+- Files are validated for integrity first
+- Headers are cleaned for BIDS compliance
+- DataLad stores the corrected versions
+
+### Standalone Python Tool
+
+The `gz_header_cleaner.py` script can also be used independently:
+
+```bash
+# Clean all .gz files in a directory
+python3 gz_header_cleaner.py /path/to/bids/dataset
+
+# Dry run to see what would be cleaned
+python3 gz_header_cleaner.py --dry-run /path/to/bids/dataset
+
+# Verbose output with detailed progress
+python3 gz_header_cleaner.py --verbose /path/to/bids/dataset
+
+# Quiet mode - only show summary
+python3 gz_header_cleaner.py --quiet /path/to/bids/dataset
+```
+
+### Usage Examples
+
+#### Check what would be cleaned (dry run):
+```bash
+$ python3 gz_header_cleaner.py --dry-run --verbose /path/to/dataset
+🔍 Found 150 .gz files to check...
+✅ sub-01_T1w.nii.gz already has clean header
+🧪 Would clean sub-01_bold.nii.gz (mtime=1759775498, filename)
+🧪 Would clean sub-02_T1w.nii.gz (mtime=1759775500)
+✅ sub-02_bold.nii.gz already has clean header
+...
+🧪 Dry run complete: 150 files checked, 45 would be cleaned, 0 errors
+```
+
+#### Clean headers:
+```bash
+$ python3 gz_header_cleaner.py --verbose /path/to/dataset
+🔍 Found 150 .gz files to check...
+✅ Cleaned sub-01_bold.nii.gz (mtime=1759775498, filename)
+✅ Cleaned sub-02_T1w.nii.gz (mtime=1759775500)
+✅ GZIP header cleaning complete: 45/150 files cleaned
+```
+
+#### Quiet operation:
+```bash
+$ python3 gz_header_cleaner.py --quiet /path/to/dataset
+✅ GZIP header cleaning complete: 45/150 files cleaned
+```
+
+### Why GZIP Header Cleaning Matters
+
+**Problem:** Some GZIP compression tools (like standard `gzip`) include metadata in file headers:
+- **MTIME**: Timestamp when the file was compressed (changes on every compression)
+- **FNAME**: Original filename (may differ from current filename)
+
+**Impact on BIDS:**
+- BIDS validator may report warnings about inconsistent metadata
+- File comparisons show differences even if content is identical
+- Version control systems detect changes unnecessarily
+
+**Solution:** Clean headers ensure:
+- ✅ BIDS compliance without warnings
+- ✅ Consistent file hashes for same content
+- ✅ Clean version control history
+- ✅ Reproducible datasets
+
+### Technical Details
+
+The tool uses a hybrid approach:
+1. **Detection (Bash)**: Fast header scanning to identify problematic files
+2. **Cleaning (Python)**: Safe binary manipulation to remove metadata
+3. **Verification**: Content integrity is preserved, only headers are modified
+
+**Header Structure:**
+```
+Bytes 0-9:   Fixed header (magic, compression method, flags, mtime, etc.)
+Bytes 10+:   Optional fields (EXTRA, NAME, COMMENT, CRC, compressed data)
+```
+
+**Cleaning Process:**
+1. Parse GZIP header structure
+2. Clear MTIME field (set to 0)
+3. Remove FNAME field if present
+4. Remove FHCRC field if present
+5. Preserve FEXTRA and FCOMMENT fields
+6. Copy compressed data unchanged
+
+### Command-Line Options
+
+| Option | Description |
+|--------|-------------|
+| `directory` | Path to directory containing .gz files (required) |
+| `--dry-run` | Show what would be cleaned without making changes |
+| `--verbose`, `-v` | Show detailed progress information |
+| `--quiet`, `-q` | Suppress all output except errors |
+| `--help`, `-h` | Show help message |
+
+### Verification
+
+After cleaning, verify the content is preserved:
+
+```bash
+# Original file
+$ gunzip -c original.nii.gz | md5
+abc123def456...
+
+# After cleaning
+$ python3 gz_header_cleaner.py /path/to/dataset
+$ gunzip -c original.nii.gz | md5
+abc123def456...  # Same hash - content preserved!
+
+# But headers are different
+$ md5 original.nii.gz
+Before: xyz789abc123...
+After:  def456ghi789...  # Different - only headers changed
+```
 
 ### Real-Time Progress Monitoring
 
@@ -284,7 +543,7 @@ Found 4,494 files to copy (excluding system files)
 Given the command:
 
 ```bash
-./convert/bids2datalad.sh -s /data/study-name/rawdata -d /storage/datalad
+./bids2datalad.sh -s /data/study-name/rawdata -d /storage/datalad
 ```
 
 The resulting DataLad structure will be:
@@ -596,8 +855,12 @@ cat sub-01/anat/sub-01_T1w.nii.gz
 
 ## 🆕 Recent Updates
 
-### Version 2.2 Changes (Enhanced Transparency & Speed)
+### Version 2.2 Changes (Enhanced Transparency, Speed & BIDS Compliance)
 
+- **🧹 GZIP Header Cleaning:** Automatic removal of problematic GZIP metadata (MTIME, FNAME) for BIDS compliance (enabled by default)
+- **🔧 BIDS Validator Configuration:** Support for custom configuration files with `-c` option to ignore specific warnings/errors
+- **🌐 SSH Remote Support:** Seamless copying from/to SSH remote servers using rsync
+- **⚡ Hash Validation Options:** Three-tier system (full/quick/skip) for performance tuning on large datasets
 - **⚡ Fasttrack Mode:** New `--fasttrack` option skips checksum validation for 2-3x faster conversions
 - **🔍 Real-time Transparency:** All processes now run in foreground with live status updates
 - **📊 Enhanced Progress Tracking:** Subject-by-subject progress indicators and detailed status messages
@@ -654,9 +917,20 @@ We welcome contributions! Please:
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/bids2datalad.git
-cd bids2datalad
-chmod +x convert/bids2datalad.sh
+git clone https://github.com/MRI-Lab-Graz/datalad.git
+cd datalad
+chmod +x bids2datalad.sh
+chmod +x gz_header_cleaner.py
+```
+
+### Testing
+
+```bash
+# Test the main conversion script
+./bids2datalad.sh --dry-run -s test/107 -d /tmp/test_output
+
+# Test the GZIP header cleaner
+python3 gz_header_cleaner.py --dry-run --verbose test/107
 ```
 
 ## 📄 License
