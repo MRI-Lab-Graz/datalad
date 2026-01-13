@@ -3,286 +3,420 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIDS2DataLad Web Interface</title>
+    <title>PRISM Studio | BIDS2DataLad</title>
+    <!-- Use Pico CSS for layout but with custom branding -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
-            --primary: #2ecc71;
-            --primary-hover: #27ae60;
-            --primary-focus: rgba(46, 204, 113, 0.25);
+            --primary: #0076ba; /* PRISM Blue */
+            --primary-hover: #005a8f;
+            --primary-focus: rgba(0, 118, 186, 0.125);
             --primary-inverse: #FFF;
-        }
-        
-        body {
-            background-color: #111;
-            color: #eee;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            --card-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
 
+        body {
+            background-color: #f8fafc;
+            color: #334155;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            margin: 0;
+        }
+
+        /* Top Navigation Bar */
+        nav.brand-nav {
+            background-color: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0.5rem 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        nav.brand-nav ul {
+            align-items: center;
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.25rem;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .brand-logo i {
+            color: var(--primary);
+            font-size: 1.5rem;
+        }
+
+        .lab-tag {
+            font-size: 0.7rem;
+            color: #64748b;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+
+        /* Main Container */
+        main.container {
+            flex: 1;
+            max-width: 1200px;
+        }
+
+        /* Terminal Window */
         #terminal {
-            background-color: #0c0c0c;
-            color: #2ecc71;
-            padding: 1rem;
-            height: 450px;
-            overflow-y: scroll;
-            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            background-color: #1e293b;
+            color: #f8fafc;
+            padding: 1.25rem;
+            height: 500px;
+            overflow-y: auto;
+            font-family: 'Fira Code', 'Cascadia Code', monospace;
             border-radius: 8px;
             margin-top: 1rem;
             white-space: pre-wrap;
-            border: 1px solid #222;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+            border: 1px solid #0f172a;
+        }
+
+        /* Status Pills */
+        .status-pill {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .status-ok { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .status-fail { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+        /* Configuration Cards */
+        article {
+            background: white !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: var(--card-box-shadow);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        article header {
+            background: #f1f5f9;
+            margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+            padding: 0.75rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #475569;
+            border-radius: 12px 12px 0 0;
+        }
+
+        /* Forms */
+        label {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #475569;
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="text"], input[type="password"], select {
+            background-color: #fff;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 0.6rem;
             font-size: 0.9rem;
         }
 
-        .status-pill {
-            padding: 0.3rem 0.6rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            margin-right: 0.5rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .status-ok { background-color: rgba(46, 204, 113, 0.1); border: 1px solid #2ecc71; color: #2ecc71; }
-        .status-fail { background-color: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; }
-        
-        header { 
-            border-bottom: 2px solid #2ecc71; 
-            margin-bottom: 2rem; 
-            padding-bottom: 1rem;
-            background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-focus);
         }
 
-        h1 { color: #2ecc71; font-weight: 800; margin-bottom: 0.2rem; }
-        h2 { color: #888; font-size: 1rem; }
+        .picker-group {
+            display: flex;
+            gap: 0;
+        }
+        
+        .picker-group input {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        
+        .picker-btn {
+            border-top-left-radius: 0 !important;
+            border-bottom-left-radius: 0 !important;
+            padding: 0 1.25rem;
+            margin: 0;
+            font-size: 0.9rem;
+        }
 
-        /* Tabs Styling */
+        /* Tabs */
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        nav[aria-label="breadcrumb"] ul li a { cursor: pointer; }
-        nav li a.active { color: #2ecc71; border-bottom: 2px solid #2ecc71; }
         
-        /* Folder Browser Styles */
-        .picker-btn {
-            padding: 0 1rem;
-            height: 100%;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            border-radius: 0 4px 4px 0;
-            border-left: none;
+        nav.tabs ul li a {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.2s;
+            color: #64748b;
+            font-weight: 500;
+            border-bottom: 3px solid transparent;
         }
         
-        #src_dir, #dest_root {
-            border-radius: 4px 0 0 4px;
+        nav.tabs ul li a.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background-color: #f1f5f9;
         }
 
-        #folder-browser-modal article {
-            max-width: 700px;
-            width: 90%;
-            background-color: #1a1a1a;
-            border: 1px solid #333;
+        button.primary-action {
+            background-color: var(--primary);
+            border: none;
+            color: white;
+            font-weight: 700;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 118, 186, 0.4);
+            transition: all 0.2s;
         }
+
+        button.primary-action:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 12px -2px rgba(0, 118, 186, 0.5);
+            background-color: var(--primary-hover);
+        }
+
+        /* Modal styling */
+        dialog article {
+            max-width: 800px;
+        }
+
         .folder-list {
-            max-height: 350px;
-            overflow-y: auto;
-            border: 1px solid #333;
             list-style: none;
             padding: 0;
-            margin: 1rem 0;
-            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
         }
+
         .folder-list li {
-            padding: 0.7rem 1rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #f1f5f9;
             cursor: pointer;
-            border-bottom: 1px solid #222;
-            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        .folder-list li:hover { background-color: #2ecc7122; color: #2ecc71; }
-        
-        button.contrast {
-            background-color: #2ecc71;
-            border-color: #2ecc71;
-            color: #000;
-            font-weight: bold;
+
+        .folder-list li:hover {
+            background-color: #f1f5f9;
+            color: var(--primary);
         }
-        button.contrast:hover {
-            background-color: #27ae60;
-            border-color: #27ae60;
+
+        footer.site-footer {
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #94a3b8;
         }
-        
+
+        /* Tooltips */
+        [data-tooltip] {
+            border-bottom: 1px dashed #cbd5e1;
+            cursor: help;
+        }
     </style>
 </head>
-<body class="container">
-    <header>
-        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-            <hgroup>
-                <h1>PRISM : BIDS2DataLad</h1>
-                <h2>Interactive Neural Data Ingestion</h2>
-            </hgroup>
-            <div id="preflight-status" style="margin-bottom: 0.5rem;">
-                <!-- Status pills go here -->
-            </div>
-        </div>
-        <nav>
+<body>
+    <nav class="brand-nav">
+        <ul>
+            <li>
+                <div class="brand-logo">
+                    <i class="fas fa-brain"></i>
+                    <div>
+                        PRISM STUDIO
+                        <div class="lab-tag">MRI-Lab Graz | BIDS Toolkit</div>
+                    </div>
+                </div>
+            </li>
+        </ul>
+        <ul id="preflight-status">
+            <!-- Dynamic status -->
+        </ul>
+    </nav>
+
+    <main class="container">
+        <nav class="tabs">
             <ul>
-              <li><a onclick="showTab('tab-main')" id="link-main" class="active">Processing</a></li>
-              <li><a onclick="showTab('tab-config')" id="link-config">Configuration</a></li>
-              <li><a onclick="showTab('tab-help')" id="link-help">Help</a></li>
+                <li><a onclick="showTab('tab-main')" id="link-main" class="active"><i class="fas fa-play-circle"></i> Run Conversion</a></li>
+                <li><a onclick="showTab('tab-config')" id="link-config"><i class="fas fa-cog"></i> Configuration</a></li>
+                <li><a onclick="showTab('tab-help')" id="link-help"><i class="fas fa-question-circle"></i> Help</a></li>
             </ul>
         </nav>
-    </header>
 
-    <main>
         <!-- Main Processing Tab -->
         <div id="tab-main" class="tab-content active">
             <section>
-                <div id="terminal">Welcome to PRISM BIDS2DataLad. Configure your paths and click 'Start Process' to begin.</div>
-                <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-                   <button type="button" class="contrast" onclick="startProcess()" style="flex: 2;">🚀 START CONVERSION</button>
-                   <button type="button" class="secondary" onclick="clearTerminal()" style="flex: 1;">Clear Logs</button>
+                <div id="terminal-container">
+                    <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span style="font-weight: 600; font-size: 0.9rem;"><i class="fas fa-terminal"></i> Console Output</span>
+                        <button class="outline secondary" onclick="clearTerminal()" style="padding: 2px 10px; font-size: 0.7rem; width: auto;">Clear</button>
+                    </header>
+                    <div id="terminal">System Ready. Please check configuration before starting.</div>
+                </div>
+                <div style="margin-top: 2rem; display: flex; justify-content: center;">
+                   <button type="button" class="primary-action" onclick="startProcess()">
+                       <i class="fas fa-rocket"></i> START BIDS CONVERSION
+                   </button>
                 </div>
             </section>
         </div>
 
         <!-- Configuration Tab -->
         <div id="tab-config" class="tab-content">
-            <section>
-                <form id="config-form">
+            <form id="config-form">
+                <article>
+                    <header>Directory Settings</header>
                     <div class="grid">
                         <div>
-                            <label for="src_dir" data-tooltip="The directory containing your raw BIDS formatted data.">Source Directory</label>
-                            <div style="display: flex;">
-                                <input type="text" id="src_dir" name="src_dir" placeholder="/path/to/bids_rawdata">
+                            <label for="src_dir" data-tooltip="The directory containing your raw BIDS formatted data.">Source BIDS Directory</label>
+                            <div class="picker-group">
+                                <input type="text" id="src_dir" name="src_dir" placeholder="/data/project/rawdata">
                                 <button type="button" class="secondary picker-btn" onclick="openPicker('src_dir')">Browse</button>
                             </div>
                         </div>
                         <div>
-                            <label for="dest_root" data-tooltip="The root directory where the DataLad dataset will be created. Supports local paths or SSH (user@host:/path)">Destination Root</label>
-                            <div style="display: flex; gap: 5px;">
-                                <input type="text" id="dest_root" name="dest_root" placeholder="/path or user@host:/path">
+                            <label for="dest_root" data-tooltip="The root directory where the DataLad dataset will be created.">Destination Root</label>
+                            <div class="picker-group">
+                                <input type="text" id="dest_root" name="dest_root" placeholder="/data/project/datalad">
                                 <button type="button" class="secondary picker-btn" onclick="openPicker('dest_root')" id="dest-picker-btn">Browse</button>
                             </div>
-                            <label style="font-size: 0.8rem; margin-top: 5px; color: #2ecc71;">
-                                <input type="checkbox" id="is_remote_dest" onchange="toggleRemoteDest()"> Remote SSH Destination
+                            <label style="margin-top: 10px; font-size: 0.8rem;">
+                                <input type="checkbox" id="is_remote_dest" onchange="toggleRemoteDest()"> Remote SSH Site
                             </label>
                         </div>
                     </div>
 
-                    <div id="ssh-details" style="display: none; border: 1px solid #2ecc7144; background: #2ecc7105; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; position: relative;">
-                        <span style="position: absolute; top: -10px; left: 15px; background: #111; padding: 0 10px; font-size: 0.7rem; color: #2ecc71; font-weight: bold; border: 1px solid #2ecc7144; border-radius: 10px;">SSH CONFIG</span>
-                        <div class="grid" style="margin-top: 0.5rem;">
-                            <label>User <input type="text" id="ssh_user" placeholder="mri_user" oninput="buildSSHPath()"></label>
-                            <label>Host <input type="text" id="ssh_host" placeholder="server.uni-graz.at" oninput="buildSSHPath()"></label>
-                            <label>Remote Path <input type="text" id="ssh_path" placeholder="/data/datalad_dest" oninput="buildSSHPath()"></label>
-                        </div>
-                        <small style="color: #777;">💡 Remote site must be configured with SSH keys for passwordless access.</small>
-                    </div>
-
-                    <article style="background: #111; border-color: #222;">
-                        <header style="background: #1a1a1a; padding: 0.5rem 1rem; border-bottom: 1px solid #2ecc7133; color: #2ecc71; font-weight: bold; font-size: 0.8rem;">ADVANCED FLAGS</header>
+                    <div id="ssh-details" style="display: none; border-left: 4px solid var(--primary); padding-left: 1.5rem; margin: 1.5rem 0; background: #f8fafc;">
+                        <p style="font-size: 0.85rem; color: var(--primary); font-weight: 600; margin-bottom: 1rem;">SSH Remote Configuration</p>
                         <div class="grid">
-                            <label data-tooltip="Skip both initial and final BIDS validation steps (Faster, but less safe).">
-                                <input type="checkbox" name="skip_bids_validation"> Skip BIDS Validation
-                            </label>
-                            <label data-tooltip="Show what would be done without making any actual changes.">
-                                <input type="checkbox" name="dry_run"> Dry Run
-                            </label>
-                            <label data-tooltip="Create a backup of the destination directory before starting.">
-                                <input type="checkbox" name="backup"> Create Backup
-                            </label>
-                            <label data-tooltip="Use multiple CPU cores for faster SHA-256 hash calculations.">
-                                <input type="checkbox" name="parallel_hash"> Parallel Hash
-                            </label>
+                            <div><label>User</label><input type="text" id="ssh_user" placeholder="mri_user" oninput="buildSSHPath()"></div>
+                            <div><label>Server Host</label><input type="text" id="ssh_host" placeholder="mri-server.uni-graz.at" oninput="buildSSHPath()"></div>
+                            <div><label>Remote Path</label><input type="text" id="ssh_path" placeholder="/storage/datalad" oninput="buildSSHPath()"></div>
                         </div>
-                        <div class="grid">
-                            <label data-tooltip="Allow overwriting a destination directory that is not empty. DANGEROUS!">
-                                <input type="checkbox" name="force_empty"> Force Empty Destination
-                            </label>
-                            <label data-tooltip="Speed up conversion significantly by skipping file checksum validation.">
-                                <input type="checkbox" name="fasttrack"> Fasttrack (Skip)
-                            </label>
-                            <label data-tooltip="Reuse an existing DataLad dataset and only ingest new or changed subjects.">
-                                <input type="checkbox" name="update"> Update Mode
-                            </label>
-                            <label data-tooltip="Do not clean GZIP headers (problematic headers can cause BIDS warnings).">
-                                <input type="checkbox" name="no_gzheader_check"> No GZ Header Check
-                            </label>
-                        </div>
-                    </article>
-
-                    <div style="text-align: right;">
-                        <button type="button" class="secondary" onclick="saveSettings()" style="width: auto;">💾 Apply & Save Settings</button>
+                        <small style="color: #64748b;"><i class="fas fa-info-circle"></i> Ensure SSH keys are configured for passwordless access.</small>
                     </div>
-                </form>
-            </section>
+                </article>
+
+                <article>
+                    <header>Advanced Processing Flags</header>
+                    <div class="grid">
+                        <div>
+                            <label><input type="checkbox" name="skip_bids_validation"> No BIDS Validation</label>
+                            <label><input type="checkbox" name="dry_run"> Dry Run (Test Mode)</label>
+                            <label><input type="checkbox" name="parallel_hash"> Parallel Hashing</label>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" name="backup"> Create Backup</label>
+                            <label><input type="checkbox" name="force_empty"> Force Non-Empty Dest</label>
+                            <label><input type="checkbox" name="update"> Update Existing Dataset</label>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" name="fasttrack"> Fast-track (Skip Checks)</label>
+                            <label><input type="checkbox" name="no_gzheader_check"> Disable GZ Header Cleanup</label>
+                        </div>
+                    </div>
+                </article>
+
+                <div style="text-align: right;">
+                    <button type="button" class="secondary" onclick="saveSettings()" style="width: auto;">
+                        <i class="fas fa-save"></i> Save Configuration
+                    </button>
+                </div>
+            </form>
         </div>
 
         <!-- Help Tab -->
         <div id="tab-help" class="tab-content">
             <article>
-                <h3>Getting Started</h3>
-                <p>This tool converts BIDS raw data into a structured DataLad repository, suitable for collaborative neural data management at MRI-Lab Graz.</p>
-                <ul>
-                    <li><strong>Source:</strong> Select the folder containing subject directories (sub-01, etc.)</li>
-                    <li><strong>Destination:</strong> Choose where to create the new DataLad dataset.</li>
-                    <li><strong>SSH:</strong> Enable the remote toggle to push directly to a central server.</li>
-                </ul>
-                <p>For more details, visit the <a href="https://github.com/MRI-Lab-Graz/datalad" target="_blank">Documentation</a>.</p>
+                <header>PRISM BIDS2DataLad Guide</header>
+                <p>This utility facilitates the ingestion of BIDS formatted MRI data into DataLad version-controlled repositories.</p>
+                <h5>Workflow:</h5>
+                <ol>
+                    <li>Configure the <strong>Source</strong> (where your data is) and <strong>Destination</strong> (where you want the repository).</li>
+                    <li>Toggle <strong>Remote SSH</strong> if you are pushing to a central laboratory server.</li>
+                    <li>Click <strong>Start Conversion</strong> and monitor the console for real-time progress.</li>
+                </ol>
+                <h5>Support:</h5>
+                <p>For technical issues, contact <a href="mailto:karl.koschutnig@uni-graz.at">Karl Koschutnig</a>.</p>
             </article>
         </div>
     </main>
 
-    <footer style="margin-top: 3rem; border-top: 1px solid #222; padding: 2rem 0; text-align: center; font-size: 0.75rem; color: #555;">
-        <p>Built for <strong>MRI-Lab Graz</strong> | Maintenance: Karl Koschutnig <a href="mailto:karl.koschutnig@uni-graz.at" style="color: #2ecc71;">karl.koschutnig@uni-graz.at</a></p>
+    <footer class="site-footer">
+        <div>&copy; 2024 MRI-Lab Graz | PRISM Studio Ecosystem</div>
+        <div style="margin-top: 0.5rem; font-size: 0.7rem;">Powered by DataLad & BIDS-Standard</div>
     </footer>
 
     <!-- Folder Browser Modal -->
     <dialog id="folder-browser-modal">
         <article>
             <header>
-                <a href="#close" aria-label="Close" class="close" onclick="closePicker()"></a>
-                <h5 id="modal-title" style="color: #2ecc71; margin-bottom: 0;">Select Directory</h5>
+                <span id="modal-title">Select Directory</span>
+                <a href="#close" aria-label="Close" class="close" onclick="closePicker()" style="float: right;"></a>
             </header>
-            <div id="path-display" style="font-size: 0.8rem; font-family: monospace; background: #000; padding: 0.5rem; margin: 1rem 0; border-radius: 4px; border: 1px solid #333;">/</div>
+            <div id="path-display" style="font-size: 0.8rem; font-family: monospace; background: #f1f5f9; padding: 0.5rem; margin: 1rem 0; border-radius: 4px; border: 1px solid #e2e8f0;">/</div>
             <ul id="folder-list" class="folder-list"></ul>
-            <div id="create-dir-section" style="display: none; border-top: 1px solid #333; padding-top: 1rem; margin-top: 1rem;">
-                <label style="font-size: 0.8rem; color: #2ecc71;">Create New Directory
-                    <div style="display: flex; gap: 5px;">
-                        <input type="text" id="new-dir-name" placeholder="folder_name" style="margin-bottom: 0; font-size: 0.9rem;">
-                        <button class="secondary" onclick="createDirectory()" style="width: auto; padding: 0.2rem 1rem;">Create</button>
+            
+            <div id="create-dir-section" style="display: none; padding-top: 1rem; border-top: 1px solid #f1f5f9;">
+                <label style="font-size: 0.8rem;">Create New Sub-folder
+                    <div class="picker-group">
+                        <input type="text" id="new-dir-name" placeholder="new_project_folder" style="height: auto; font-size: 0.8rem;">
+                        <button class="secondary outline" onclick="createDirectory()" style="width: auto; padding: 0.2rem 1rem;">Create</button>
                     </div>
                 </label>
             </div>
-            <footer>
-                <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                    <button class="secondary outline" onclick="closePicker()" style="width: auto;">Cancel</button>
-                    <button onclick="selectCurrentFolder()" style="width: auto;">Select Path</button>
-                </div>
+
+            <footer style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="secondary outline" onclick="closePicker()" style="width: auto;">Cancel</button>
+                <button onclick="selectCurrentFolder()" style="width: auto;">Confirm Path</button>
             </footer>
         </article>
     </dialog>
 
     <script>
-        // Force polling to avoid "Cannot obtain socket from WSGI environment" error with Waitress
         const socket = io({ transports: ['polling'] });
-        
         const terminal = document.getElementById('terminal');
         const configForm = document.getElementById('config-form');
         const preflightDiv = document.getElementById('preflight-status');
 
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+            document.querySelectorAll('nav.tabs a').forEach(a => a.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             const linkId = 'link-' + tabId.replace('tab-', '');
             document.getElementById(linkId).classList.add('active');
         }
 
         function clearTerminal() {
-            terminal.innerHTML = "Logs cleared. Watching for process output...\n";
+            terminal.innerHTML = "Console cleared. Standing by...\n";
         }
         
         // Picker State
@@ -292,7 +426,7 @@
 
         function startProcess() {
             showTab('tab-main');
-            terminal.innerHTML = '--- Starting Process ---\n';
+            terminal.innerHTML = '[SYSTEM] Initializing BIDS2DataLad process...\n';
             
             const formData = new FormData(configForm);
             const config = {
@@ -311,7 +445,7 @@
             };
             
             if (!config.src_dir || !config.dest_root) {
-                terminal.innerHTML += "Error: Source or Destination missing! Check Configuration tab.\n";
+                terminal.innerHTML += "[ERROR] Source or Destination path is missing. Please check Configuration.\n";
                 showTab('tab-config');
                 return;
             }
@@ -321,18 +455,12 @@
 
         function openPicker(targetId) {
             currentTargetId = targetId;
-            
-            // If it's remote destination, the picker is for local construction or just show warning
             if (targetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
-                alert("Folder browsing is only supported for local paths. For remote destinations, please enter the path manually in the SSH fields.");
+                alert("Remote path browsing is not supported. Please fill the SSH details.");
                 return;
             }
-
-            document.getElementById('modal-title').innerText = `Select ${targetId === 'src_dir' ? 'Source' : 'Destination'}`;
-            
-            // Show create dir option only for destination and non-remote
+            document.getElementById('modal-title').innerText = `Select ${targetId === 'src_dir' ? 'Source' : 'Destination'} Folder`;
             document.getElementById('create-dir-section').style.display = targetId === 'dest_root' ? 'block' : 'none';
-            
             const initialPath = document.getElementById(targetId).value || '/';
             browseTo(initialPath);
             pickerModal.showModal();
@@ -344,9 +472,6 @@
             const isRemote = document.getElementById('is_remote_dest').checked;
             document.getElementById('ssh-details').style.display = isRemote ? 'block' : 'none';
             document.getElementById('dest-picker-btn').style.display = isRemote ? 'none' : 'flex';
-            if (!isRemote) {
-                document.getElementById('dest_root').value = '';
-            }
         }
 
         function buildSSHPath() {
@@ -362,25 +487,18 @@
             fetch(`/api/list_dirs?path=${encodeURIComponent(path)}`)
                 .then(r => r.json())
                 .then(data => {
-                    if (data.error) {
-                        if (path !== '/') browseTo('/');
-                        return;
-                    }
+                    if (data.error) { if (path !== '/') browseTo('/'); return; }
                     currentBrowserPath = data.current_path;
                     document.getElementById('path-display').innerText = currentBrowserPath;
-                    
                     const list = document.getElementById('folder-list');
                     list.innerHTML = '';
-                    
-                    // Add ".." parent directory link
                     const parentLi = document.createElement('li');
-                    parentLi.innerHTML = '📁 .. (Parent Directory)';
+                    parentLi.innerHTML = '<i class="fas fa-level-up-alt"></i> .. (Parent)';
                     parentLi.onclick = () => browseTo(data.parent_path);
                     list.appendChild(parentLi);
-                    
                     data.directories.forEach(dir => {
                         const li = document.createElement('li');
-                        li.innerHTML = `📁 ${dir}`;
+                        li.innerHTML = `<i class="fas fa-folder"></i> ${dir}`;
                         li.onclick = () => browseTo(`${currentBrowserPath}/${dir}`);
                         list.appendChild(li);
                     });
@@ -395,68 +513,49 @@
         function createDirectory() {
             const name = document.getElementById('new-dir-name').value;
             if (!name) return;
-            
-            let fullPath;
-            if (currentTargetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
-                // If remote, we create it via SSH path
-                fullPath = document.getElementById('dest_root').value;
-            } else {
-                fullPath = `${currentBrowserPath}/${name}`;
-            }
-
+            const fullPath = `${currentBrowserPath}/${name}`;
             fetch('/api/create_dir', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({path: fullPath})
-            })
-            .then(r => r.json())
-            .then(data => {
+            }).then(r => r.json()).then(data => {
                 if (data.error) alert(data.error);
                 else {
-                    alert("Directory created successfully!");
                     document.getElementById('new-dir-name').value = '';
-                    if (!document.getElementById('is_remote_dest').checked) {
-                        browseTo(data.path);
-                    }
+                    browseTo(data.path);
                 }
             });
         }
 
         function updatePreflight() {
-            fetch('/api/preflight')
-                .then(r => r.json())
-                .then(data => {
-                    preflightDiv.innerHTML = `
-                        <span class="status-pill ${data.datalad ? 'status-ok' : 'status-fail'}" data-tooltip="DataLad: Core data management system">DataLad: ${data.datalad ? 'Ready' : 'Missing'}</span>
-                        <span class="status-pill ${data.git ? 'status-ok' : 'status-fail'}" data-tooltip="Git: Version control system required by DataLad">Git: ${data.git ? 'Ready' : 'Missing'}</span>
-                        <span class="status-pill ${data.git_annex ? 'status-ok' : 'status-fail'}" data-tooltip="Git-Annex: Large file storage handling">Annex: ${data.git_annex ? 'Ready' : 'Missing'}</span>
-                        <span class="status-pill ${data.deno ? 'status-ok' : 'status-fail'}" data-tooltip="Deno: Required for the BIDS Validator">Deno: ${data.deno ? 'Ready' : 'Missing'}</span>
-                        <span class="status-pill status-ok" data-tooltip="Remaining space on the system drive">Disk: ${data.disk_space}</span>
-                    `;
-                });
+            fetch('/api/preflight').then(r => r.json()).then(data => {
+                preflightDiv.innerHTML = `
+                    <li><span class="status-pill ${data.datalad ? 'status-ok' : 'status-fail'}"><i class="fas fa-box"></i> DataLad</span></li>
+                    <li><span class="status-pill ${data.git ? 'status-ok' : 'status-fail'}"><i class="fas fa-code-branch"></i> Git</span></li>
+                    <li><span class="status-pill status-ok"><i class="far fa-hdd"></i> ${data.disk_space}</span></li>
+                `;
+            });
         }
 
         function loadConfig() {
-            fetch('/api/config')
-                .then(r => r.json())
-                .then(config => {
-                    document.getElementById('src_dir').value = config.src_dir;
-                    document.getElementById('dest_root').value = config.dest_root;
-                    if (config.dest_root && config.dest_root.includes('@') && config.dest_root.includes(':')) {
-                        document.getElementById('is_remote_dest').checked = true;
-                        toggleRemoteDest();
-                        const parts = config.dest_root.match(/([^@]+)@([^:]+):(.+)/);
-                        if (parts) {
-                            document.getElementById('ssh_user').value = parts[1];
-                            document.getElementById('ssh_host').value = parts[2];
-                            document.getElementById('ssh_path').value = parts[3];
-                        }
+            fetch('/api/config').then(r => r.json()).then(config => {
+                document.getElementById('src_dir').value = config.src_dir;
+                document.getElementById('dest_root').value = config.dest_root;
+                if (config.dest_root && config.dest_root.includes('@') && config.dest_root.includes(':')) {
+                    document.getElementById('is_remote_dest').checked = true;
+                    toggleRemoteDest();
+                    const pts = config.dest_root.match(/([^@]+)@([^:]+):(.+)/);
+                    if (pts) {
+                        document.getElementById('ssh_user').value = pts[1];
+                        document.getElementById('ssh_host').value = pts[2];
+                        document.getElementById('ssh_path').value = pts[3];
                     }
-                    for (const [flag, val] of Object.entries(config.flags)) {
-                        const el = document.querySelector(`[name="${flag}"]`);
-                        if (el) el.checked = val;
-                    }
-                });
+                }
+                for (const [f, v] of Object.entries(config.flags)) {
+                    const el = document.querySelector(`[name="${f}"]`);
+                    if (el) el.checked = v;
+                }
+            });
         }
 
         function saveSettings() {
@@ -479,13 +578,8 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(config)
-            }).then(() => alert('Settings saved!'));
+            }).then(() => alert('Settings saved successfully.'));
         }
-
-        configForm.onsubmit = (e) => {
-            e.preventDefault();
-            startProcess();
-        };
 
         socket.on('terminal_output', (msg) => {
             terminal.innerText += msg.data;
@@ -493,13 +587,12 @@
         });
 
         socket.on('process_finished', (msg) => {
-            terminal.innerText += `\n--- Process finished with code ${msg.exit_code} ---\n`;
+            terminal.innerText += `\n[FINISH] Process exited with status code ${msg.exit_code}.\n`;
             terminal.scrollTop = terminal.scrollHeight;
         });
 
         updatePreflight();
         loadConfig();
-        setInterval(updatePreflight, 30000);
     </script>
 </body>
 </html>
