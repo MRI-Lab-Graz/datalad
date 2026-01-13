@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIDS2DataLad Web Interface</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        :root {
+            --primary: #2ecc71;
+            --primary-hover: #27ae60;
+            --primary-focus: rgba(46, 204, 113, 0.25);
+            --primary-inverse: #FFF;
+        }
+        
+        body {
+            background-color: #111;
+            color: #eee;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+        }
+
+        #terminal {
+            background-color: #0c0c0c;
+            color: #2ecc71;
+            padding: 1rem;
+            height: 450px;
+            overflow-y: scroll;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            border-radius: 8px;
+            margin-top: 1rem;
+            white-space: pre-wrap;
+            border: 1px solid #222;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            font-size: 0.9rem;
+        }
+
+        .status-pill {
+            padding: 0.3rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-right: 0.5rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-ok { background-color: rgba(46, 204, 113, 0.1); border: 1px solid #2ecc71; color: #2ecc71; }
+        .status-fail { background-color: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; }
+        
+        header { 
+            border-bottom: 2px solid #2ecc71; 
+            margin-bottom: 2rem; 
+            padding-bottom: 1rem;
+            background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+        }
+
+        h1 { color: #2ecc71; font-weight: 800; margin-bottom: 0.2rem; }
+        h2 { color: #888; font-size: 1rem; }
+
+        /* Tabs Styling */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        nav[aria-label="breadcrumb"] ul li a { cursor: pointer; }
+        nav li a.active { color: #2ecc71; border-bottom: 2px solid #2ecc71; }
+        
+        /* Folder Browser Styles */
+        .picker-btn {
+            padding: 0 1rem;
+            height: 100%;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            border-radius: 0 4px 4px 0;
+            border-left: none;
+        }
+        
+        #src_dir, #dest_root {
+            border-radius: 4px 0 0 4px;
+        }
+
+        #folder-browser-modal article {
+            max-width: 700px;
+            width: 90%;
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+        }
+        .folder-list {
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+        .folder-list li {
+            padding: 0.7rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #222;
+            transition: all 0.2s ease;
+        }
+        .folder-list li:hover { background-color: #2ecc7122; color: #2ecc71; }
+        
+        button.contrast {
+            background-color: #2ecc71;
+            border-color: #2ecc71;
+            color: #000;
+            font-weight: bold;
+        }
+        button.contrast:hover {
+            background-color: #27ae60;
+            border-color: #27ae60;
+        }
+        
+    </style>
+</head>
+<body class="container">
+    <header>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <hgroup>
+                <h1>PRISM : BIDS2DataLad</h1>
+                <h2>Interactive Neural Data Ingestion</h2>
+            </hgroup>
+            <div id="preflight-status" style="margin-bottom: 0.5rem;">
+                <!-- Status pills go here -->
+            </div>
+        </div>
+        <nav>
+            <ul>
+              <li><a onclick="showTab('tab-main')" id="link-main" class="active">Processing</a></li>
+              <li><a onclick="showTab('tab-config')" id="link-config">Configuration</a></li>
+              <li><a onclick="showTab('tab-help')" id="link-help">Help</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Main Processing Tab -->
+        <div id="tab-main" class="tab-content active">
+            <section>
+                <div id="terminal">Welcome to PRISM BIDS2DataLad. Configure your paths and click 'Start Process' to begin.</div>
+                <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                   <button type="button" class="contrast" onclick="startProcess()" style="flex: 2;">🚀 START CONVERSION</button>
+                   <button type="button" class="secondary" onclick="clearTerminal()" style="flex: 1;">Clear Logs</button>
+                </div>
+            </section>
+        </div>
+
+        <!-- Configuration Tab -->
+        <div id="tab-config" class="tab-content">
+            <section>
+                <form id="config-form">
+                    <div class="grid">
+                        <div>
+                            <label for="src_dir" data-tooltip="The directory containing your raw BIDS formatted data.">Source Directory</label>
+                            <div style="display: flex;">
+                                <input type="text" id="src_dir" name="src_dir" placeholder="/path/to/bids_rawdata">
+                                <button type="button" class="secondary picker-btn" onclick="openPicker('src_dir')">Browse</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="dest_root" data-tooltip="The root directory where the DataLad dataset will be created. Supports local paths or SSH (user@host:/path)">Destination Root</label>
+                            <div style="display: flex; gap: 5px;">
+                                <input type="text" id="dest_root" name="dest_root" placeholder="/path or user@host:/path">
+                                <button type="button" class="secondary picker-btn" onclick="openPicker('dest_root')" id="dest-picker-btn">Browse</button>
+                            </div>
+                            <label style="font-size: 0.8rem; margin-top: 5px; color: #2ecc71;">
+                                <input type="checkbox" id="is_remote_dest" onchange="toggleRemoteDest()"> Remote SSH Destination
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="ssh-details" style="display: none; border: 1px solid #2ecc7144; background: #2ecc7105; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; position: relative;">
+                        <span style="position: absolute; top: -10px; left: 15px; background: #111; padding: 0 10px; font-size: 0.7rem; color: #2ecc71; font-weight: bold; border: 1px solid #2ecc7144; border-radius: 10px;">SSH CONFIG</span>
+                        <div class="grid" style="margin-top: 0.5rem;">
+                            <label>User <input type="text" id="ssh_user" placeholder="mri_user" oninput="buildSSHPath()"></label>
+                            <label>Host <input type="text" id="ssh_host" placeholder="server.uni-graz.at" oninput="buildSSHPath()"></label>
+                            <label>Remote Path <input type="text" id="ssh_path" placeholder="/data/datalad_dest" oninput="buildSSHPath()"></label>
+                        </div>
+                        <small style="color: #777;">💡 Remote site must be configured with SSH keys for passwordless access.</small>
+                    </div>
+
+                    <article style="background: #111; border-color: #222;">
+                        <header style="background: #1a1a1a; padding: 0.5rem 1rem; border-bottom: 1px solid #2ecc7133; color: #2ecc71; font-weight: bold; font-size: 0.8rem;">ADVANCED FLAGS</header>
+                        <div class="grid">
+                            <label data-tooltip="Skip both initial and final BIDS validation steps (Faster, but less safe).">
+                                <input type="checkbox" name="skip_bids_validation"> Skip BIDS Validation
+                            </label>
+                            <label data-tooltip="Show what would be done without making any actual changes.">
+                                <input type="checkbox" name="dry_run"> Dry Run
+                            </label>
+                            <label data-tooltip="Create a backup of the destination directory before starting.">
+                                <input type="checkbox" name="backup"> Create Backup
+                            </label>
+                            <label data-tooltip="Use multiple CPU cores for faster SHA-256 hash calculations.">
+                                <input type="checkbox" name="parallel_hash"> Parallel Hash
+                            </label>
+                        </div>
+                        <div class="grid">
+                            <label data-tooltip="Allow overwriting a destination directory that is not empty. DANGEROUS!">
+                                <input type="checkbox" name="force_empty"> Force Empty Destination
+                            </label>
+                            <label data-tooltip="Speed up conversion significantly by skipping file checksum validation.">
+                                <input type="checkbox" name="fasttrack"> Fasttrack (Skip)
+                            </label>
+                            <label data-tooltip="Reuse an existing DataLad dataset and only ingest new or changed subjects.">
+                                <input type="checkbox" name="update"> Update Mode
+                            </label>
+                            <label data-tooltip="Do not clean GZIP headers (problematic headers can cause BIDS warnings).">
+                                <input type="checkbox" name="no_gzheader_check"> No GZ Header Check
+                            </label>
+                        </div>
+                    </article>
+
+                    <div style="text-align: right;">
+                        <button type="button" class="secondary" onclick="saveSettings()" style="width: auto;">💾 Apply & Save Settings</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
+        <!-- Help Tab -->
+        <div id="tab-help" class="tab-content">
+            <article>
+                <h3>Getting Started</h3>
+                <p>This tool converts BIDS raw data into a structured DataLad repository, suitable for collaborative neural data management at MRI-Lab Graz.</p>
+                <ul>
+                    <li><strong>Source:</strong> Select the folder containing subject directories (sub-01, etc.)</li>
+                    <li><strong>Destination:</strong> Choose where to create the new DataLad dataset.</li>
+                    <li><strong>SSH:</strong> Enable the remote toggle to push directly to a central server.</li>
+                </ul>
+                <p>For more details, visit the <a href="https://github.com/MRI-Lab-Graz/datalad" target="_blank">Documentation</a>.</p>
+            </article>
+        </div>
+    </main>
+
+    <footer style="margin-top: 3rem; border-top: 1px solid #222; padding: 2rem 0; text-align: center; font-size: 0.75rem; color: #555;">
+        <p>Built for <strong>MRI-Lab Graz</strong> | Maintenance: Karl Koschutnig <a href="mailto:karl.koschutnig@uni-graz.at" style="color: #2ecc71;">karl.koschutnig@uni-graz.at</a></p>
+    </footer>
+
+    <!-- Folder Browser Modal -->
+    <dialog id="folder-browser-modal">
+        <article>
+            <header>
+                <a href="#close" aria-label="Close" class="close" onclick="closePicker()"></a>
+                <h5 id="modal-title" style="color: #2ecc71; margin-bottom: 0;">Select Directory</h5>
+            </header>
+            <div id="path-display" style="font-size: 0.8rem; font-family: monospace; background: #000; padding: 0.5rem; margin: 1rem 0; border-radius: 4px; border: 1px solid #333;">/</div>
+            <ul id="folder-list" class="folder-list"></ul>
+            <div id="create-dir-section" style="display: none; border-top: 1px solid #333; padding-top: 1rem; margin-top: 1rem;">
+                <label style="font-size: 0.8rem; color: #2ecc71;">Create New Directory
+                    <div style="display: flex; gap: 5px;">
+                        <input type="text" id="new-dir-name" placeholder="folder_name" style="margin-bottom: 0; font-size: 0.9rem;">
+                        <button class="secondary" onclick="createDirectory()" style="width: auto; padding: 0.2rem 1rem;">Create</button>
+                    </div>
+                </label>
+            </div>
+            <footer>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="secondary outline" onclick="closePicker()" style="width: auto;">Cancel</button>
+                    <button onclick="selectCurrentFolder()" style="width: auto;">Select Path</button>
+                </div>
+            </footer>
+        </article>
+    </dialog>
+
+    <script>
+        // Force polling to avoid "Cannot obtain socket from WSGI environment" error with Waitress
+        const socket = io({ transports: ['polling'] });
+        
+        const terminal = document.getElementById('terminal');
+        const configForm = document.getElementById('config-form');
+        const preflightDiv = document.getElementById('preflight-status');
+
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            const linkId = 'link-' + tabId.replace('tab-', '');
+            document.getElementById(linkId).classList.add('active');
+        }
+
+        function clearTerminal() {
+            terminal.innerHTML = "Logs cleared. Watching for process output...\n";
+        }
+        
+        // Picker State
+        let currentTargetId = '';
+        let currentBrowserPath = '/';
+        const pickerModal = document.getElementById('folder-browser-modal');
+
+        function startProcess() {
+            showTab('tab-main');
+            terminal.innerHTML = '--- Starting Process ---\n';
+            
+            const formData = new FormData(configForm);
+            const config = {
+                src_dir: formData.get('src_dir'),
+                dest_root: formData.get('dest_root'),
+                flags: {
+                    skip_bids_validation: formData.get('skip_bids_validation') === 'on',
+                    dry_run: formData.get('dry_run') === 'on',
+                    backup: formData.get('backup') === 'on',
+                    parallel_hash: formData.get('parallel_hash') === 'on',
+                    force_empty: formData.get('force_empty') === 'on',
+                    fasttrack: formData.get('fasttrack') === 'on',
+                    update: formData.get('update') === 'on',
+                    no_gzheader_check: formData.get('no_gzheader_check') === 'on',
+                }
+            };
+            
+            if (!config.src_dir || !config.dest_root) {
+                terminal.innerHTML += "Error: Source or Destination missing! Check Configuration tab.\n";
+                showTab('tab-config');
+                return;
+            }
+            
+            socket.emit('start_process', {config: config});
+        }
+
+        function openPicker(targetId) {
+            currentTargetId = targetId;
+            
+            // If it's remote destination, the picker is for local construction or just show warning
+            if (targetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
+                alert("Folder browsing is only supported for local paths. For remote destinations, please enter the path manually in the SSH fields.");
+                return;
+            }
+
+            document.getElementById('modal-title').innerText = `Select ${targetId === 'src_dir' ? 'Source' : 'Destination'}`;
+            
+            // Show create dir option only for destination and non-remote
+            document.getElementById('create-dir-section').style.display = targetId === 'dest_root' ? 'block' : 'none';
+            
+            const initialPath = document.getElementById(targetId).value || '/';
+            browseTo(initialPath);
+            pickerModal.showModal();
+        }
+
+        function closePicker() { pickerModal.close(); }
+
+        function toggleRemoteDest() {
+            const isRemote = document.getElementById('is_remote_dest').checked;
+            document.getElementById('ssh-details').style.display = isRemote ? 'block' : 'none';
+            document.getElementById('dest-picker-btn').style.display = isRemote ? 'none' : 'flex';
+            if (!isRemote) {
+                document.getElementById('dest_root').value = '';
+            }
+        }
+
+        function buildSSHPath() {
+            const user = document.getElementById('ssh_user').value;
+            const host = document.getElementById('ssh_host').value;
+            const path = document.getElementById('ssh_path').value;
+            if (user && host && path) {
+                document.getElementById('dest_root').value = `${user}@${host}:${path}`;
+            }
+        }
+
+        function browseTo(path) {
+            fetch(`/api/list_dirs?path=${encodeURIComponent(path)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        if (path !== '/') browseTo('/');
+                        return;
+                    }
+                    currentBrowserPath = data.current_path;
+                    document.getElementById('path-display').innerText = currentBrowserPath;
+                    
+                    const list = document.getElementById('folder-list');
+                    list.innerHTML = '';
+                    
+                    // Add ".." parent directory link
+                    const parentLi = document.createElement('li');
+                    parentLi.innerHTML = '📁 .. (Parent Directory)';
+                    parentLi.onclick = () => browseTo(data.parent_path);
+                    list.appendChild(parentLi);
+                    
+                    data.directories.forEach(dir => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `📁 ${dir}`;
+                        li.onclick = () => browseTo(`${currentBrowserPath}/${dir}`);
+                        list.appendChild(li);
+                    });
+                });
+        }
+
+        function selectCurrentFolder() {
+            document.getElementById(currentTargetId).value = currentBrowserPath;
+            closePicker();
+        }
+
+        function createDirectory() {
+            const name = document.getElementById('new-dir-name').value;
+            if (!name) return;
+            
+            let fullPath;
+            if (currentTargetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
+                // If remote, we create it via SSH path
+                fullPath = document.getElementById('dest_root').value;
+            } else {
+                fullPath = `${currentBrowserPath}/${name}`;
+            }
+
+            fetch('/api/create_dir', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: fullPath})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) alert(data.error);
+                else {
+                    alert("Directory created successfully!");
+                    document.getElementById('new-dir-name').value = '';
+                    if (!document.getElementById('is_remote_dest').checked) {
+                        browseTo(data.path);
+                    }
+                }
+            });
+        }
+
+        function updatePreflight() {
+            fetch('/api/preflight')
+                .then(r => r.json())
+                .then(data => {
+                    preflightDiv.innerHTML = `
+                        <span class="status-pill ${data.datalad ? 'status-ok' : 'status-fail'}" data-tooltip="DataLad: Core data management system">DataLad: ${data.datalad ? 'Ready' : 'Missing'}</span>
+                        <span class="status-pill ${data.git ? 'status-ok' : 'status-fail'}" data-tooltip="Git: Version control system required by DataLad">Git: ${data.git ? 'Ready' : 'Missing'}</span>
+                        <span class="status-pill ${data.git_annex ? 'status-ok' : 'status-fail'}" data-tooltip="Git-Annex: Large file storage handling">Annex: ${data.git_annex ? 'Ready' : 'Missing'}</span>
+                        <span class="status-pill ${data.deno ? 'status-ok' : 'status-fail'}" data-tooltip="Deno: Required for the BIDS Validator">Deno: ${data.deno ? 'Ready' : 'Missing'}</span>
+                        <span class="status-pill status-ok" data-tooltip="Remaining space on the system drive">Disk: ${data.disk_space}</span>
+                    `;
+                });
+        }
+
+        function loadConfig() {
+            fetch('/api/config')
+                .then(r => r.json())
+                .then(config => {
+                    document.getElementById('src_dir').value = config.src_dir;
+                    document.getElementById('dest_root').value = config.dest_root;
+                    if (config.dest_root && config.dest_root.includes('@') && config.dest_root.includes(':')) {
+                        document.getElementById('is_remote_dest').checked = true;
+                        toggleRemoteDest();
+                        const parts = config.dest_root.match(/([^@]+)@([^:]+):(.+)/);
+                        if (parts) {
+                            document.getElementById('ssh_user').value = parts[1];
+                            document.getElementById('ssh_host').value = parts[2];
+                            document.getElementById('ssh_path').value = parts[3];
+                        }
+                    }
+                    for (const [flag, val] of Object.entries(config.flags)) {
+                        const el = document.querySelector(`[name="${flag}"]`);
+                        if (el) el.checked = val;
+                    }
+                });
+        }
+
+        function saveSettings() {
+            const formData = new FormData(configForm);
+            const config = {
+                src_dir: formData.get('src_dir'),
+                dest_root: formData.get('dest_root'),
+                flags: {
+                    skip_bids_validation: formData.get('skip_bids_validation') === 'on',
+                    dry_run: formData.get('dry_run') === 'on',
+                    backup: formData.get('backup') === 'on',
+                    parallel_hash: formData.get('parallel_hash') === 'on',
+                    force_empty: formData.get('force_empty') === 'on',
+                    fasttrack: formData.get('fasttrack') === 'on',
+                    update: formData.get('update') === 'on',
+                    no_gzheader_check: formData.get('no_gzheader_check') === 'on',
+                }
+            };
+            fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(config)
+            }).then(() => alert('Settings saved!'));
+        }
+
+        configForm.onsubmit = (e) => {
+            e.preventDefault();
+            startProcess();
+        };
+
+        socket.on('terminal_output', (msg) => {
+            terminal.innerText += msg.data;
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+
+        socket.on('process_finished', (msg) => {
+            terminal.innerText += `\n--- Process finished with code ${msg.exit_code} ---\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+
+        updatePreflight();
+        loadConfig();
+        setInterval(updatePreflight, 30000);
+    </script>
+</body>
+</html>
