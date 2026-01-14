@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}PRISM Studio | BIDS2DataLad{% endblock %}
+{% block title %}PRISM Studio | PRISM2DataLad{% endblock %}
 
 {% block styles %}
 <style>
@@ -203,8 +203,12 @@
     <div class="tab-pane fade" id="tab-help">
         <div class="card feature-card">
             <div class="card-body p-4">
-                <h4 class="mb-4 text-primary">PRISM BIDS2DataLad Guide</h4>
+                <h4 class="mb-4 text-primary">MRI-Lab Graz PRISM2DataLad Guide</h4>
                 <p>This utility facilitates the ingestion of BIDS formatted MRI data into DataLad version-controlled repositories.</p>
+                <div class="alert alert-info py-2">
+                    <i class="fas fa-external-link-alt me-2"></i>
+                    For detailed PRISM documentation, visit <a href="https://prism-studio.readthedocs.io/en/latest/" target="_blank" class="fw-bold">PRISM Studio ReadTheDocs</a>.
+                </div>
                 <h5 class="mt-4 mb-3">Workflow:</h5>
                 <ol class="list-group list-group-numbered list-group-flush mb-4">
                     <li class="list-group-item">Configure the <strong>Source</strong> (where your data is) and <strong>Destination</strong> (where you want the repository).</li>
@@ -264,7 +268,7 @@
     let currentBrowserPath = '/';
 
     function startProcess() {
-        terminal.innerHTML = '[SYSTEM] Initializing BIDS2DataLad process...\n';
+        terminal.innerHTML = '[SYSTEM] Initializing PRISM2DataLad process...\n';
         
         const formData = new FormData(configForm);
         const config = {

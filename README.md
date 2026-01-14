@@ -1,10 +1,10 @@
-# 🧠 BIDS to DataLad Conversion Tool
+# 🧠 PRISM to DataLad Conversion Tool
 
 [![Version](https://img.shields.io/badge/version-2.2-blue.svg)](https://github.com/MRI-Lab-Graz/## 📁 Repository Structure
 
 ```
 datalad/
-├── bids2datalad.sh           # Main conversion script
+├── prism2datalad.sh           # Main conversion script
 ├── gz_header_cleaner.py      # GZIP header cleaning tool (standalone)
 ├── compress_sourcedata.sh    # Helper script for data compression
 ├── README.md                 # This file
@@ -14,7 +14,7 @@ datalad/
 
 ### Main Scripts
 
-- **`bids2datalad.sh`** - Main conversion script with full DataLad integration
+- **`prism2datalad.sh`** - Main conversion script with full DataLad integration
 - **`gz_header_cleaner.py`** - Standalone tool for cleaning GZIP headers (also integrated in main script)
 - **`compress_sourcedata.sh`** - Helper script for compressing BIDS datasets
 
@@ -66,19 +66,19 @@ A robust, production-ready script for converting BIDS-formatted MRI datasets int
 
 ```bash
 # Basic conversion with git-annex optimization
-./bids2datalad.sh -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./prism2datalad.sh -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # Fast conversion without checksum validation (recommended for large datasets)
-./bids2datalad.sh --fasttrack -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./prism2datalad.sh --fasttrack -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # With all safety features enabled
-./bids2datalad.sh --backup --parallel-hash -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./prism2datalad.sh --backup --parallel-hash -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # Preview what would be done (dry run)
-./bids2datalad.sh --dry-run -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./prism2datalad.sh --dry-run -s /path/to/bids_rawdata -d /path/to/datalad_destination
 
 # Skip GZIP header cleaning if needed (enabled by default)
-./bids2datalad.sh --no-gzheader-check -s /path/to/bids_rawdata -d /path/to/datalad_destination
+./prism2datalad.sh --no-gzheader-check -s /path/to/bids_rawdata -d /path/to/datalad_destination
 ```
 
 ## 💾 Storage Efficiency
@@ -153,7 +153,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 
 ```
 datalad/
-├── bids2datalad.sh           # Main conversion script
+├── prism2datalad.sh           # Main conversion script
 ├── gz_header_cleaner.py      # GZIP header cleaning tool (standalone)
 ├── compress_sourcedata.sh    # Helper script for data compression
 ├── gz_header_cleaner.py      # Python tool for GZIP header cleaning
@@ -164,14 +164,14 @@ datalad/
 
 ### Main Scripts
 
-- **`bids2datalad.sh`** - Main conversion script with full DataLad integration
+- **`prism2datalad.sh`** - Main conversion script with full DataLad integration
 - **`gz_header_cleaner.py`** - Standalone tool for cleaning GZIP headers (also integrated in main script)
 - **`compress_sourcedata.sh`** - Helper script for compressing BIDS datasets
 
 ## �🔧 Usage
 
 ```bash
-./bids2datalad.sh [OPTIONS] -s SOURCE_DIR -d DESTINATION_DIR
+./prism2datalad.sh [OPTIONS] -s SOURCE_DIR -d DESTINATION_DIR
 ```
 
 ### Command Line Options
@@ -220,7 +220,7 @@ your-study/
 ### Basic Conversion
 
 ```bash
-./bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Creates `/storage/datalad/my-study/rawdata/` with DataLad structure
@@ -228,7 +228,7 @@ your-study/
 ### BIDS Validator Configuration
 
 ```bash
-./bids2datalad.sh -s /data/my-study/rawdata -d /storage/datalad -c /path/to/bids_config.json
+./prism2datalad.sh -s /data/my-study/rawdata -d /storage/datalad -c /path/to/bids_config.json
 ```
 
 **Result:** Use custom BIDS validator configuration to ignore specific warnings/errors
@@ -247,7 +247,7 @@ your-study/
 ### Different Source Directory Names
 
 ```bash
-./bids2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
+./prism2datalad.sh -s /data/my-study/bids_data -d /storage/datalad
 ```
 
 **Result:** Creates `/storage/datalad/my-study/bids_data/` with DataLad structure
@@ -255,7 +255,7 @@ your-study/
 ### Safe Conversion with Backup
 
 ```bash
-./bids2datalad.sh --backup -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --backup -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Creates backup before conversion if destination exists
@@ -264,13 +264,13 @@ your-study/
 
 ```bash
 # Copy from SSH remote source to local destination
-./bids2datalad.sh -s user@server:/path/to/bids_data -d /local/destination
+./prism2datalad.sh -s user@server:/path/to/bids_data -d /local/destination
 
 # Copy from local source to SSH remote destination  
-./bids2datalad.sh -s /local/bids_data -d user@server:/path/to/destination
+./prism2datalad.sh -s /local/bids_data -d user@server:/path/to/destination
 
 # Use quick hash validation for SSH (recommended for better performance)
-./bids2datalad.sh --quick-hash -s user@server:/path/to/bids_data -d /local/destination
+./prism2datalad.sh --quick-hash -s user@server:/path/to/bids_data -d /local/destination
 ```
 
 **Result:** Seamlessly copy from/to remote servers using rsync over SSH
@@ -278,7 +278,7 @@ your-study/
 ### Fast Conversion with Fasttrack Mode
 
 ```bash
-./bids2datalad.sh --fasttrack -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --fasttrack -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Skips checksum validation for significantly faster processing (recommended for large datasets)
@@ -286,7 +286,7 @@ your-study/
 ### Fast Conversion with Parallel Processing
 
 ```bash
-./bids2datalad.sh --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Uses parallel hash calculation for faster verification
@@ -294,7 +294,7 @@ your-study/
 ### Ultimate Speed Conversion
 
 ```bash
-./bids2datalad.sh --fasttrack --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --fasttrack --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Combines fasttrack mode with parallel processing for maximum speed
@@ -302,7 +302,7 @@ your-study/
 ### Incremental Update (Add Newly Acquired Subjects)
 
 ```bash
-./bids2datalad.sh --update -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --update -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Reuses the existing DataLad dataset and only ingests new or changed subjects from the source BIDS directory.
@@ -310,7 +310,7 @@ your-study/
 ### Preview Mode (Recommended First Run)
 
 ```bash
-./bids2datalad.sh --dry-run -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --dry-run -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Shows what would be done without making changes
@@ -318,7 +318,7 @@ your-study/
 ### Skip Validation (For Pre-validated Datasets)
 
 ```bash
-./bids2datalad.sh --skip_bids_validation -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --skip_bids_validation -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Skips BIDS validation step
@@ -326,7 +326,7 @@ your-study/
 ### Safe Mode (Force Empty Directory)
 
 ```bash
-./bids2datalad.sh --force-empty -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --force-empty -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Aborts if destination directory is not empty (safest option)
@@ -334,7 +334,7 @@ your-study/
 ### Skip GZIP Header Cleaning
 
 ```bash
-./bids2datalad.sh --no-gzheader-check -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --no-gzheader-check -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Disables automatic GZIP header cleaning (may cause BIDS validator warnings)
@@ -342,7 +342,7 @@ your-study/
 ### Full-Featured Conversion
 
 ```bash
-./bids2datalad.sh --backup --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
+./prism2datalad.sh --backup --parallel-hash -s /data/my-study/rawdata -d /storage/datalad
 ```
 
 **Result:** Maximum safety with backup and parallel processing
@@ -373,7 +373,7 @@ Found 4,494 files to copy (excluding system files)
 
 ### Overview
 
-The BIDS to DataLad conversion tool includes automatic GZIP header cleaning (enabled by default) to ensure BIDS compliance. Some GZIP files contain metadata in their headers (timestamps, original filenames) that can cause BIDS validator warnings. This tool removes these problematic fields while preserving the compressed content.
+The PRISM to DataLad conversion tool includes automatic GZIP header cleaning (enabled by default) to ensure BIDS compliance. Some GZIP files contain metadata in their headers (timestamps, original filenames) that can cause BIDS validator warnings. This tool removes these problematic fields while preserving the compressed content.
 
 ### What It Does
 
@@ -390,10 +390,10 @@ GZIP header cleaning is **enabled by default** during conversion:
 
 ```bash
 # Default behavior - headers are automatically cleaned
-./bids2datalad.sh -s /path/to/bids_data -d /path/to/destination
+./prism2datalad.sh -s /path/to/bids_data -d /path/to/destination
 
 # Disable header cleaning if needed
-./bids2datalad.sh --no-gzheader-check -s /path/to/bids_data -d /path/to/destination
+./prism2datalad.sh --no-gzheader-check -s /path/to/bids_data -d /path/to/destination
 ```
 
 The cleaning happens after files are copied but before DataLad operations, ensuring:
@@ -543,7 +543,7 @@ Found 4,494 files to copy (excluding system files)
 Given the command:
 
 ```bash
-./bids2datalad.sh -s /data/study-name/rawdata -d /storage/datalad
+./prism2datalad.sh -s /data/study-name/rawdata -d /storage/datalad
 ```
 
 The resulting DataLad structure will be:
@@ -919,7 +919,7 @@ We welcome contributions! Please:
 ```bash
 git clone https://github.com/MRI-Lab-Graz/datalad.git
 cd datalad
-chmod +x bids2datalad.sh
+chmod +x prism2datalad.sh
 chmod +x gz_header_cleaner.py
 ```
 
@@ -927,7 +927,7 @@ chmod +x gz_header_cleaner.py
 
 ```bash
 # Test the main conversion script
-./bids2datalad.sh --dry-run -s test/107 -d /tmp/test_output
+./prism2datalad.sh --dry-run -s test/107 -d /tmp/test_output
 
 # Test the GZIP header cleaner
 python3 gz_header_cleaner.py --dry-run --verbose test/107
@@ -946,8 +946,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/bids2datalad/issues)
-- 💡 **Feature Requests:** [Start a discussion](https://github.com/yourusername/bids2datalad/discussions)
+- 🐛 **Bug Reports:** [Open an issue](https://github.com/yourusername/prism2datalad/issues)
+- 💡 **Feature Requests:** [Start a discussion](https://github.com/yourusername/prism2datalad/discussions)
 - 🧠 **BIDS Questions:** [Post on NeuroStars](https://neurostars.org/tags/bids)
 - 📧 **Email:** [your.email@institution.edu](mailto:your.email@institution.edu)
 

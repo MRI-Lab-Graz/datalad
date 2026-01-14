@@ -9,7 +9,7 @@ set -euo pipefail
 # Set up logging - IMPORTANT: Keep logs OUTSIDE the BIDS dataset directory
 # to maintain BIDS compliance (no non-BIDS files in dataset)
 LOGFILE="/tmp/conversion_$(date +%Y%m%d_%H%M%S).log"
-LOCKFILE="/tmp/bids2datalad_$$.lock"
+LOCKFILE="/tmp/prism2datalad_$$.lock"
 TEMP_DIR=""
 ATOMIC_DEST=""
 
@@ -119,7 +119,7 @@ print_header() {
 
 # Function to create temporary directory
 create_temp_dir() {
-    TEMP_DIR=$(mktemp -d -t "bids2datalad.XXXXXX")
+    TEMP_DIR=$(mktemp -d -t "prism2datalad.XXXXXX")
     if [[ ! -d "$TEMP_DIR" ]]; then
         log_error "❌ Failed to create temporary directory"
         exit 1

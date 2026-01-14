@@ -3,7 +3,7 @@
 # Exit on error
 set -e
 
-echo "🚀 Starting installation for BIDS2DataLad Web Interface..."
+echo "🚀 Starting installation for PRISM2DataLad Web Interface..."
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then

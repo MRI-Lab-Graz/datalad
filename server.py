@@ -188,7 +188,7 @@ def handle_start_process(data):
 
     config = data.get('config', load_config())
     
-    cmd = ["bash", "bids2datalad.sh"]
+    cmd = ["bash", "prism2datalad.sh"]
     cmd.extend(["-s", config['src_dir']])
     cmd.extend(["-d", config['dest_root']])
     
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     
     if target_port:
         url = f"http://localhost:{target_port}"
-        print(f"🚀 BIDS2DataLad Web Interface: {url}")
+        print(f"🚀 PRISM2DataLad Web Interface: {url}")
         # Open browser in a separate thread
         def open_browser():
             threading.Timer(1.5, lambda: webbrowser.open(url)).start()
