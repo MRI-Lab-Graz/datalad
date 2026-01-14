@@ -1,598 +1,440 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRISM Studio | BIDS2DataLad</title>
-    <!-- Use Pico CSS for layout but with custom branding -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        :root {
-            --primary: #0076ba; /* PRISM Blue */
-            --primary-hover: #005a8f;
-            --primary-focus: rgba(0, 118, 186, 0.125);
-            --primary-inverse: #FFF;
-            --card-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
+{% extends "base.html" %}
 
-        body {
-            background-color: #f8fafc;
-            color: #334155;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            margin: 0;
-        }
+{% block title %}PRISM Studio | BIDS2DataLad{% endblock %}
 
-        /* Top Navigation Bar */
-        nav.brand-nav {
-            background-color: #ffffff;
-            border-bottom: 1px solid #e2e8f0;
-            padding: 0.5rem 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
+{% block styles %}
+<style>
+    #terminal {
+        background-color: #1e293b;
+        color: #f8fafc;
+        padding: 1.25rem;
+        height: 500px;
+        overflow-y: auto;
+        font-family: 'Fira Code', 'Cascadia Code', monospace;
+        border-radius: 8px;
+        white-space: pre-wrap;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        border: 1px solid #0f172a;
+    }
+    .folder-list {
+        list-style: none;
+        padding: 0;
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+    }
+    .folder-list li {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .folder-list li:hover {
+        background-color: #f1f5f9;
+        color: var(--prism-blue);
+    }
+    .status-pill {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 10px;
+    }
+    .status-ok { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .status-fail { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .nav-tabs .nav-link {
+        color: #64748b;
+        font-weight: 500;
+        border: none;
+        border-bottom: 3px solid transparent;
+        padding: 0.75rem 1.25rem;
+    }
+    .nav-tabs .nav-link.active {
+        color: var(--prism-blue);
+        border-bottom-color: var(--prism-blue);
+        background: transparent;
+    }
+</style>
+{% endblock %}
 
-        nav.brand-nav ul {
-            align-items: center;
-        }
+{% block navbar_extra %}
+<div id="preflight-status" class="d-flex align-items-center me-3">
+    <!-- Dynamic status -->
+</div>
+{% endblock %}
 
-        .brand-logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 800;
-            font-size: 1.25rem;
-            color: #1e293b;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
+{% block content %}
+<ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" id="config-tab-btn" data-bs-toggle="tab" data-bs-target="#tab-config" type="button"><i class="fas fa-cog me-2"></i>Configuration & Run</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="help-tab-btn" data-bs-toggle="tab" data-bs-target="#tab-help" type="button"><i class="fas fa-question-circle me-2"></i>Help</button>
+    </li>
+</ul>
 
-        .brand-logo i {
-            color: var(--primary);
-            font-size: 1.5rem;
-        }
-
-        .lab-tag {
-            font-size: 0.7rem;
-            color: #64748b;
-            font-weight: 400;
-            text-transform: none;
-            letter-spacing: normal;
-        }
-
-        /* Main Container */
-        main.container {
-            flex: 1;
-            max-width: 1200px;
-        }
-
-        /* Terminal Window */
-        #terminal {
-            background-color: #1e293b;
-            color: #f8fafc;
-            padding: 1.25rem;
-            height: 500px;
-            overflow-y: auto;
-            font-family: 'Fira Code', 'Cascadia Code', monospace;
-            border-radius: 8px;
-            margin-top: 1rem;
-            white-space: pre-wrap;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-            border: 1px solid #0f172a;
-        }
-
-        /* Status Pills */
-        .status-pill {
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-        
-        .status-ok { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-        .status-fail { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-
-        /* Configuration Cards */
-        article {
-            background: white !important;
-            border: 1px solid #e2e8f0 !important;
-            box-shadow: var(--card-box-shadow);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        article header {
-            background: #f1f5f9;
-            margin: -1.5rem -1.5rem 1.5rem -1.5rem;
-            padding: 0.75rem 1.5rem;
-            border-bottom: 1px solid #e2e8f0;
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: #475569;
-            border-radius: 12px 12px 0 0;
-        }
-
-        /* Forms */
-        label {
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #475569;
-            margin-bottom: 0.5rem;
-        }
-
-        input[type="text"], input[type="password"], select {
-            background-color: #fff;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            padding: 0.6rem;
-            font-size: 0.9rem;
-        }
-
-        input[type="text"]:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-focus);
-        }
-
-        .picker-group {
-            display: flex;
-            gap: 0;
-        }
-        
-        .picker-group input {
-            border-top-right-radius: 0;
-            border-bottom-right-radius: 0;
-        }
-        
-        .picker-btn {
-            border-top-left-radius: 0 !important;
-            border-bottom-left-radius: 0 !important;
-            padding: 0 1.25rem;
-            margin: 0;
-            font-size: 0.9rem;
-        }
-
-        /* Tabs */
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        
-        nav.tabs ul li a {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px 8px 0 0;
-            transition: all 0.2s;
-            color: #64748b;
-            font-weight: 500;
-            border-bottom: 3px solid transparent;
-        }
-        
-        nav.tabs ul li a.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-            background-color: #f1f5f9;
-        }
-
-        button.primary-action {
-            background-color: var(--primary);
-            border: none;
-            color: white;
-            font-weight: 700;
-            padding: 0.75rem 2rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px -1px rgba(0, 118, 186, 0.4);
-            transition: all 0.2s;
-        }
-
-        button.primary-action:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 12px -2px rgba(0, 118, 186, 0.5);
-            background-color: var(--primary-hover);
-        }
-
-        /* Modal styling */
-        dialog article {
-            max-width: 800px;
-        }
-
-        .folder-list {
-            list-style: none;
-            padding: 0;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-        }
-
-        .folder-list li {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #f1f5f9;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .folder-list li:hover {
-            background-color: #f1f5f9;
-            color: var(--primary);
-        }
-
-        footer.site-footer {
-            background: white;
-            border-top: 1px solid #e2e8f0;
-            padding: 2rem;
-            text-align: center;
-            font-size: 0.8rem;
-            color: #94a3b8;
-        }
-
-        /* Tooltips */
-        [data-tooltip] {
-            border-bottom: 1px dashed #cbd5e1;
-            cursor: help;
-        }
-    </style>
-</head>
-<body>
-    <nav class="brand-nav">
-        <ul>
-            <li>
-                <div class="brand-logo">
-                    <i class="fas fa-brain"></i>
-                    <div>
-                        PRISM STUDIO
-                        <div class="lab-tag">MRI-Lab Graz | BIDS Toolkit</div>
-                    </div>
-                </div>
-            </li>
-        </ul>
-        <ul id="preflight-status">
-            <!-- Dynamic status -->
-        </ul>
-    </nav>
-
-    <main class="container">
-        <nav class="tabs">
-            <ul>
-                <li><a onclick="showTab('tab-main')" id="link-main" class="active"><i class="fas fa-play-circle"></i> Run Conversion</a></li>
-                <li><a onclick="showTab('tab-config')" id="link-config"><i class="fas fa-cog"></i> Configuration</a></li>
-                <li><a onclick="showTab('tab-help')" id="link-help"><i class="fas fa-question-circle"></i> Help</a></li>
-            </ul>
-        </nav>
-
-        <!-- Main Processing Tab -->
-        <div id="tab-main" class="tab-content active">
-            <section>
-                <div id="terminal-container">
-                    <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <span style="font-weight: 600; font-size: 0.9rem;"><i class="fas fa-terminal"></i> Console Output</span>
-                        <button class="outline secondary" onclick="clearTerminal()" style="padding: 2px 10px; font-size: 0.7rem; width: auto;">Clear</button>
-                    </header>
-                    <div id="terminal">System Ready. Please check configuration before starting.</div>
-                </div>
-                <div style="margin-top: 2rem; display: flex; justify-content: center;">
-                   <button type="button" class="primary-action" onclick="startProcess()">
-                       <i class="fas fa-rocket"></i> START BIDS CONVERSION
-                   </button>
-                </div>
-            </section>
-        </div>
-
-        <!-- Configuration Tab -->
-        <div id="tab-config" class="tab-content">
-            <form id="config-form">
-                <article>
-                    <header>Directory Settings</header>
-                    <div class="grid">
-                        <div>
-                            <label for="src_dir" data-tooltip="The directory containing your raw BIDS formatted data.">Source BIDS Directory</label>
-                            <div class="picker-group">
-                                <input type="text" id="src_dir" name="src_dir" placeholder="/data/project/rawdata">
-                                <button type="button" class="secondary picker-btn" onclick="openPicker('src_dir')">Browse</button>
+<div class="tab-content">
+    <!-- Configuration & Run Tab -->
+    <div class="tab-pane fade show active" id="tab-config">
+        <form id="config-form">
+            <div class="card feature-card mb-4">
+                <div class="card-header bg-light fw-bold text-muted small text-uppercase">Directory Settings</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="src_dir" class="form-label fw-bold small text-muted">Source BIDS Directory</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="src_dir" name="src_dir" placeholder="/data/project/rawdata">
+                                <button class="btn btn-outline-secondary" type="button" onclick="openPicker('src_dir')">Browse</button>
                             </div>
                         </div>
-                        <div>
-                            <label for="dest_root" data-tooltip="The root directory where the DataLad dataset will be created.">Destination Root</label>
-                            <div class="picker-group">
-                                <input type="text" id="dest_root" name="dest_root" placeholder="/data/project/datalad">
-                                <button type="button" class="secondary picker-btn" onclick="openPicker('dest_root')" id="dest-picker-btn">Browse</button>
+                        <div class="col-md-6">
+                            <label for="dest_root" class="form-label fw-bold small text-muted">Destination Root</label>
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" id="dest_root" name="dest_root" placeholder="/data/project/datalad">
+                                <button class="btn btn-outline-secondary" type="button" onclick="openPicker('dest_root')" id="dest-picker-btn">Browse</button>
                             </div>
-                            <label style="margin-top: 10px; font-size: 0.8rem;">
-                                <input type="checkbox" id="is_remote_dest" onchange="toggleRemoteDest()"> Remote SSH Site
-                            </label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_remote_dest" onchange="toggleRemoteDest()">
+                                <label class="form-check-label small" for="is_remote_dest">Remote SSH Site</label>
+                            </div>
                         </div>
                     </div>
 
-                    <div id="ssh-details" style="display: none; border-left: 4px solid var(--primary); padding-left: 1.5rem; margin: 1.5rem 0; background: #f8fafc;">
-                        <p style="font-size: 0.85rem; color: var(--primary); font-weight: 600; margin-bottom: 1rem;">SSH Remote Configuration</p>
-                        <div class="grid">
-                            <div><label>User</label><input type="text" id="ssh_user" placeholder="mri_user" oninput="buildSSHPath()"></div>
-                            <div><label>Server Host</label><input type="text" id="ssh_host" placeholder="mri-server.uni-graz.at" oninput="buildSSHPath()"></div>
-                            <div><label>Remote Path</label><input type="text" id="ssh_path" placeholder="/storage/datalad" oninput="buildSSHPath()"></div>
+                    <div id="ssh-details" class="mt-4 p-3 border-start border-4 border-primary bg-light rounded" style="display: none;">
+                        <h6 class="text-primary mb-3">SSH Remote Configuration</h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label small">User</label>
+                                <input type="text" class="form-control form-control-sm" id="ssh_user" placeholder="mri_user" oninput="buildSSHPath()">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Server Host</label>
+                                <input type="text" class="form-control form-control-sm" id="ssh_host" placeholder="mri-server.uni-graz.at" oninput="buildSSHPath()">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Remote Path</label>
+                                <input type="text" class="form-control form-control-sm" id="ssh_path" placeholder="/storage/datalad" oninput="buildSSHPath()">
+                            </div>
                         </div>
-                        <small style="color: #64748b;"><i class="fas fa-info-circle"></i> Ensure SSH keys are configured for passwordless access.</small>
+                        <div class="form-text mt-2"><i class="fas fa-info-circle me-1"></i>Ensure SSH keys are configured for passwordless access.</div>
                     </div>
-                </article>
-
-                <article>
-                    <header>Advanced Processing Flags</header>
-                    <div class="grid">
-                        <div>
-                            <label><input type="checkbox" name="skip_bids_validation"> No BIDS Validation</label>
-                            <label><input type="checkbox" name="dry_run"> Dry Run (Test Mode)</label>
-                            <label><input type="checkbox" name="parallel_hash"> Parallel Hashing</label>
-                        </div>
-                        <div>
-                            <label><input type="checkbox" name="backup"> Create Backup</label>
-                            <label><input type="checkbox" name="force_empty"> Force Non-Empty Dest</label>
-                            <label><input type="checkbox" name="update"> Update Existing Dataset</label>
-                        </div>
-                        <div>
-                            <label><input type="checkbox" name="fasttrack"> Fast-track (Skip Checks)</label>
-                            <label><input type="checkbox" name="no_gzheader_check"> Disable GZ Header Cleanup</label>
-                        </div>
-                    </div>
-                </article>
-
-                <div style="text-align: right;">
-                    <button type="button" class="secondary" onclick="saveSettings()" style="width: auto;">
-                        <i class="fas fa-save"></i> Save Configuration
-                    </button>
                 </div>
-            </form>
-        </div>
-
-        <!-- Help Tab -->
-        <div id="tab-help" class="tab-content">
-            <article>
-                <header>PRISM BIDS2DataLad Guide</header>
-                <p>This utility facilitates the ingestion of BIDS formatted MRI data into DataLad version-controlled repositories.</p>
-                <h5>Workflow:</h5>
-                <ol>
-                    <li>Configure the <strong>Source</strong> (where your data is) and <strong>Destination</strong> (where you want the repository).</li>
-                    <li>Toggle <strong>Remote SSH</strong> if you are pushing to a central laboratory server.</li>
-                    <li>Click <strong>Start Conversion</strong> and monitor the console for real-time progress.</li>
-                </ol>
-                <h5>Support:</h5>
-                <p>For technical issues, contact <a href="mailto:karl.koschutnig@uni-graz.at">Karl Koschutnig</a>.</p>
-            </article>
-        </div>
-    </main>
-
-    <footer class="site-footer">
-        <div>&copy; 2024 MRI-Lab Graz | PRISM Studio Ecosystem</div>
-        <div style="margin-top: 0.5rem; font-size: 0.7rem;">Powered by DataLad & BIDS-Standard</div>
-    </footer>
-
-    <!-- Folder Browser Modal -->
-    <dialog id="folder-browser-modal">
-        <article>
-            <header>
-                <span id="modal-title">Select Directory</span>
-                <a href="#close" aria-label="Close" class="close" onclick="closePicker()" style="float: right;"></a>
-            </header>
-            <div id="path-display" style="font-size: 0.8rem; font-family: monospace; background: #f1f5f9; padding: 0.5rem; margin: 1rem 0; border-radius: 4px; border: 1px solid #e2e8f0;">/</div>
-            <ul id="folder-list" class="folder-list"></ul>
-            
-            <div id="create-dir-section" style="display: none; padding-top: 1rem; border-top: 1px solid #f1f5f9;">
-                <label style="font-size: 0.8rem;">Create New Sub-folder
-                    <div class="picker-group">
-                        <input type="text" id="new-dir-name" placeholder="new_project_folder" style="height: auto; font-size: 0.8rem;">
-                        <button class="secondary outline" onclick="createDirectory()" style="width: auto; padding: 0.2rem 1rem;">Create</button>
-                    </div>
-                </label>
             </div>
 
-            <footer style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 10px;">
-                <button class="secondary outline" onclick="closePicker()" style="width: auto;">Cancel</button>
-                <button onclick="selectCurrentFolder()" style="width: auto;">Confirm Path</button>
-            </footer>
-        </article>
-    </dialog>
+            <div class="card feature-card mb-4">
+                <div class="card-header bg-light fw-bold text-muted small text-uppercase">Advanced Processing Flags</div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="skip_bids_validation" id="skip_bids_validation">
+                                <label class="form-check-label" for="skip_bids_validation">No BIDS Validation</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run">
+                                <label class="form-check-label" for="dry_run">Dry Run (Test Mode)</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="parallel_hash" id="parallel_hash">
+                                <label class="form-check-label" for="parallel_hash">Parallel Hashing</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="backup" id="backup">
+                                <label class="form-check-label" for="backup">Create Backup</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="force_empty" id="force_empty">
+                                <label class="form-check-label" for="force_empty">Force Non-Empty Dest</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="update" id="update">
+                                <label class="form-check-label" for="update">Update Existing Dataset</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="fasttrack" id="fasttrack">
+                                <label class="form-check-label" for="fasttrack">Fast-track (Skip Checks)</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="no_gzheader_check" id="no_gzheader_check">
+                                <label class="form-check-label" for="no_gzheader_check">Disable GZ Header Cleanup</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <script>
-        const socket = io({ transports: ['polling'] });
-        const terminal = document.getElementById('terminal');
-        const configForm = document.getElementById('config-form');
-        const preflightDiv = document.getElementById('preflight-status');
+            <div class="text-end mb-5">
+                <button type="button" class="btn btn-outline-secondary px-4 me-2" onclick="saveSettings()">
+                    <i class="fas fa-save me-2"></i>Save Settings
+                </button>
+                <button type="button" class="btn btn-primary btn-lg px-5 shadow" onclick="startProcess()">
+                    <i class="fas fa-rocket me-2"></i>START CONVERSION
+                </button>
+            </div>
+        </form>
 
-        function showTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('nav.tabs a').forEach(a => a.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            const linkId = 'link-' + tabId.replace('tab-', '');
-            document.getElementById(linkId).classList.add('active');
-        }
+        <hr class="my-5">
 
-        function clearTerminal() {
-            terminal.innerHTML = "Console cleared. Standing by...\n";
+        <div class="card feature-card mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0 text-muted small fw-bold text-uppercase"><i class="fas fa-terminal me-2"></i>Console Output</h5>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearTerminal()">Clear</button>
+                </div>
+                <div id="terminal">System Ready. Please check configuration before starting.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Tab -->
+    <div class="tab-pane fade" id="tab-help">
+        <div class="card feature-card">
+            <div class="card-body p-4">
+                <h4 class="mb-4 text-primary">PRISM BIDS2DataLad Guide</h4>
+                <p>This utility facilitates the ingestion of BIDS formatted MRI data into DataLad version-controlled repositories.</p>
+                <h5 class="mt-4 mb-3">Workflow:</h5>
+                <ol class="list-group list-group-numbered list-group-flush mb-4">
+                    <li class="list-group-item">Configure the <strong>Source</strong> (where your data is) and <strong>Destination</strong> (where you want the repository).</li>
+                    <li class="list-group-item">Toggle <strong>Remote SSH</strong> if you are pushing to a central laboratory server.</li>
+                    <li class="list-group-item">Click <strong>Start Conversion</strong> and monitor the console for real-time progress.</li>
+                </ol>
+                <h5>Support:</h5>
+                <p>For technical issues, contact <a href="mailto:karl.koschutnig@uni-graz.at" class="text-decoration-none">Karl Koschutnig</a>.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Folder Browser Modal -->
+<div class="modal fade" id="folderBrowserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-title">Select Directory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="path-display" class="bg-light p-2 mb-3 border rounded font-monospace small">/</div>
+                <ul id="folder-list" class="folder-list"></ul>
+                
+                <div id="create-dir-section" class="mt-3 pt-3 border-top" style="display: none;">
+                    <label class="form-label small fw-bold">Create New Sub-folder</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" id="new-dir-name" placeholder="new_project_folder">
+                        <button class="btn btn-outline-primary" type="button" onclick="createDirectory()">Create</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="selectCurrentFolder()">Confirm Path</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const socket = io({ transports: ['polling'] });
+    const terminal = document.getElementById('terminal');
+    const configForm = document.getElementById('config-form');
+    const preflightDiv = document.getElementById('preflight-status');
+    const pickerModal = new bootstrap.Modal(document.getElementById('folderBrowserModal'));
+
+    function clearTerminal() {
+        terminal.innerHTML = "Console cleared. Standing by...\n";
+    }
+    
+    // Picker State
+    let currentTargetId = '';
+    let currentBrowserPath = '/';
+
+    function startProcess() {
+        terminal.innerHTML = '[SYSTEM] Initializing BIDS2DataLad process...\n';
+        
+        const formData = new FormData(configForm);
+        const config = {
+            src_dir: formData.get('src_dir'),
+            dest_root: formData.get('dest_root'),
+            flags: {
+                skip_bids_validation: formData.get('skip_bids_validation') === 'on',
+                dry_run: formData.get('dry_run') === 'on',
+                backup: formData.get('backup') === 'on',
+                parallel_hash: formData.get('parallel_hash') === 'on',
+                force_empty: formData.get('force_empty') === 'on',
+                fasttrack: formData.get('fasttrack') === 'on',
+                update: formData.get('update') === 'on',
+                no_gzheader_check: formData.get('no_gzheader_check') === 'on',
+            }
+        };
+        
+        if (!config.src_dir || !config.dest_root) {
+            terminal.innerHTML += "[ERROR] Source or Destination path is missing. Please check Configuration.\n";
+            return;
         }
         
-        // Picker State
-        let currentTargetId = '';
-        let currentBrowserPath = '/';
-        const pickerModal = document.getElementById('folder-browser-modal');
+        // Auto-scroll to terminal
+        document.getElementById('terminal').scrollIntoView({ behavior: 'smooth' });
+        
+        socket.emit('start_process', {config: config});
+    }
 
-        function startProcess() {
-            showTab('tab-main');
-            terminal.innerHTML = '[SYSTEM] Initializing BIDS2DataLad process...\n';
-            
-            const formData = new FormData(configForm);
-            const config = {
-                src_dir: formData.get('src_dir'),
-                dest_root: formData.get('dest_root'),
-                flags: {
-                    skip_bids_validation: formData.get('skip_bids_validation') === 'on',
-                    dry_run: formData.get('dry_run') === 'on',
-                    backup: formData.get('backup') === 'on',
-                    parallel_hash: formData.get('parallel_hash') === 'on',
-                    force_empty: formData.get('force_empty') === 'on',
-                    fasttrack: formData.get('fasttrack') === 'on',
-                    update: formData.get('update') === 'on',
-                    no_gzheader_check: formData.get('no_gzheader_check') === 'on',
-                }
-            };
-            
-            if (!config.src_dir || !config.dest_root) {
-                terminal.innerHTML += "[ERROR] Source or Destination path is missing. Please check Configuration.\n";
-                showTab('tab-config');
-                return;
-            }
-            
-            socket.emit('start_process', {config: config});
+    function openPicker(targetId) {
+        currentTargetId = targetId;
+        if (targetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
+            alert("Remote path browsing is not supported. Please fill the SSH details.");
+            return;
         }
+        document.getElementById('modal-title').innerText = `Select ${targetId === 'src_dir' ? 'Source' : 'Destination'} Folder`;
+        document.getElementById('create-dir-section').style.display = targetId === 'dest_root' ? 'block' : 'none';
+        const initialPath = document.getElementById(targetId).value || '/';
+        browseTo(initialPath);
+        pickerModal.show();
+    }
 
-        function openPicker(targetId) {
-            currentTargetId = targetId;
-            if (targetId === 'dest_root' && document.getElementById('is_remote_dest').checked) {
-                alert("Remote path browsing is not supported. Please fill the SSH details.");
-                return;
-            }
-            document.getElementById('modal-title').innerText = `Select ${targetId === 'src_dir' ? 'Source' : 'Destination'} Folder`;
-            document.getElementById('create-dir-section').style.display = targetId === 'dest_root' ? 'block' : 'none';
-            const initialPath = document.getElementById(targetId).value || '/';
-            browseTo(initialPath);
-            pickerModal.showModal();
+    function closePicker() { pickerModal.hide(); }
+
+    function toggleRemoteDest() {
+        const isRemote = document.getElementById('is_remote_dest').checked;
+        document.getElementById('ssh-details').style.display = isRemote ? 'block' : 'none';
+        document.getElementById('dest-picker-btn').style.display = isRemote ? 'none' : 'flex';
+    }
+
+    function buildSSHPath() {
+        const user = document.getElementById('ssh_user').value;
+        const host = document.getElementById('ssh_host').value;
+        const path = document.getElementById('ssh_path').value;
+        if (user && host && path) {
+            document.getElementById('dest_root').value = `${user}@${host}:${path}`;
         }
+    }
 
-        function closePicker() { pickerModal.close(); }
-
-        function toggleRemoteDest() {
-            const isRemote = document.getElementById('is_remote_dest').checked;
-            document.getElementById('ssh-details').style.display = isRemote ? 'block' : 'none';
-            document.getElementById('dest-picker-btn').style.display = isRemote ? 'none' : 'flex';
-        }
-
-        function buildSSHPath() {
-            const user = document.getElementById('ssh_user').value;
-            const host = document.getElementById('ssh_host').value;
-            const path = document.getElementById('ssh_path').value;
-            if (user && host && path) {
-                document.getElementById('dest_root').value = `${user}@${host}:${path}`;
-            }
-        }
-
-        function browseTo(path) {
-            fetch(`/api/list_dirs?path=${encodeURIComponent(path)}`)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.error) { if (path !== '/') browseTo('/'); return; }
-                    currentBrowserPath = data.current_path;
-                    document.getElementById('path-display').innerText = currentBrowserPath;
-                    const list = document.getElementById('folder-list');
-                    list.innerHTML = '';
-                    const parentLi = document.createElement('li');
-                    parentLi.innerHTML = '<i class="fas fa-level-up-alt"></i> .. (Parent)';
-                    parentLi.onclick = () => browseTo(data.parent_path);
-                    list.appendChild(parentLi);
-                    data.directories.forEach(dir => {
-                        const li = document.createElement('li');
-                        li.innerHTML = `<i class="fas fa-folder"></i> ${dir}`;
-                        li.onclick = () => browseTo(`${currentBrowserPath}/${dir}`);
-                        list.appendChild(li);
-                    });
+    function browseTo(path) {
+        fetch(`/api/list_dirs?path=${encodeURIComponent(path)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { if (path !== '/') browseTo('/'); return; }
+                currentBrowserPath = data.current_path;
+                document.getElementById('path-display').innerText = currentBrowserPath;
+                const list = document.getElementById('folder-list');
+                list.innerHTML = '';
+                const parentLi = document.createElement('li');
+                parentLi.innerHTML = '<i class="fas fa-level-up-alt"></i> .. (Parent)';
+                parentLi.onclick = () => browseTo(data.parent_path);
+                list.appendChild(parentLi);
+                data.directories.forEach(dir => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<i class="fas fa-folder"></i> ${dir}`;
+                    li.onclick = () => browseTo(`${currentBrowserPath}/${dir}`);
+                    list.appendChild(li);
                 });
-        }
-
-        function selectCurrentFolder() {
-            document.getElementById(currentTargetId).value = currentBrowserPath;
-            closePicker();
-        }
-
-        function createDirectory() {
-            const name = document.getElementById('new-dir-name').value;
-            if (!name) return;
-            const fullPath = `${currentBrowserPath}/${name}`;
-            fetch('/api/create_dir', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({path: fullPath})
-            }).then(r => r.json()).then(data => {
-                if (data.error) alert(data.error);
-                else {
-                    document.getElementById('new-dir-name').value = '';
-                    browseTo(data.path);
-                }
             });
-        }
+    }
 
-        function updatePreflight() {
-            fetch('/api/preflight').then(r => r.json()).then(data => {
-                preflightDiv.innerHTML = `
-                    <li><span class="status-pill ${data.datalad ? 'status-ok' : 'status-fail'}"><i class="fas fa-box"></i> DataLad</span></li>
-                    <li><span class="status-pill ${data.git ? 'status-ok' : 'status-fail'}"><i class="fas fa-code-branch"></i> Git</span></li>
-                    <li><span class="status-pill status-ok"><i class="far fa-hdd"></i> ${data.disk_space}</span></li>
-                `;
-            });
-        }
+    function selectCurrentFolder() {
+        document.getElementById(currentTargetId).value = currentBrowserPath;
+        closePicker();
+    }
 
-        function loadConfig() {
-            fetch('/api/config').then(r => r.json()).then(config => {
-                document.getElementById('src_dir').value = config.src_dir;
-                document.getElementById('dest_root').value = config.dest_root;
-                if (config.dest_root && config.dest_root.includes('@') && config.dest_root.includes(':')) {
-                    document.getElementById('is_remote_dest').checked = true;
-                    toggleRemoteDest();
-                    const pts = config.dest_root.match(/([^@]+)@([^:]+):(.+)/);
-                    if (pts) {
-                        document.getElementById('ssh_user').value = pts[1];
-                        document.getElementById('ssh_host').value = pts[2];
-                        document.getElementById('ssh_path').value = pts[3];
-                    }
-                }
-                for (const [f, v] of Object.entries(config.flags)) {
-                    const el = document.querySelector(`[name="${f}"]`);
-                    if (el) el.checked = v;
-                }
-            });
-        }
-
-        function saveSettings() {
-            const formData = new FormData(configForm);
-            const config = {
-                src_dir: formData.get('src_dir'),
-                dest_root: formData.get('dest_root'),
-                flags: {
-                    skip_bids_validation: formData.get('skip_bids_validation') === 'on',
-                    dry_run: formData.get('dry_run') === 'on',
-                    backup: formData.get('backup') === 'on',
-                    parallel_hash: formData.get('parallel_hash') === 'on',
-                    force_empty: formData.get('force_empty') === 'on',
-                    fasttrack: formData.get('fasttrack') === 'on',
-                    update: formData.get('update') === 'on',
-                    no_gzheader_check: formData.get('no_gzheader_check') === 'on',
-                }
-            };
-            fetch('/api/config', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(config)
-            }).then(() => alert('Settings saved successfully.'));
-        }
-
-        socket.on('terminal_output', (msg) => {
-            terminal.innerText += msg.data;
-            terminal.scrollTop = terminal.scrollHeight;
+    function createDirectory() {
+        const name = document.getElementById('new-dir-name').value;
+        if (!name) return;
+        const fullPath = `${currentBrowserPath}/${name}`;
+        fetch('/api/create_dir', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: fullPath})
+        }).then(r => r.json()).then(data => {
+            if (data.error) alert(data.error);
+            else {
+                document.getElementById('new-dir-name').value = '';
+                browseTo(data.path);
+            }
         });
+    }
 
-        socket.on('process_finished', (msg) => {
-            terminal.innerText += `\n[FINISH] Process exited with status code ${msg.exit_code}.\n`;
-            terminal.scrollTop = terminal.scrollHeight;
+    function updatePreflight() {
+        fetch('/api/preflight').then(r => r.json()).then(data => {
+            preflightDiv.innerHTML = `
+                <span class="status-pill ${data.datalad ? 'status-ok' : 'status-fail'}"><i class="fas fa-box me-1"></i> DataLad</span>
+                <span class="status-pill ${data.git ? 'status-ok' : 'status-fail'}"><i class="fas fa-code-branch me-1"></i> Git</span>
+                <span class="status-pill status-ok"><i class="far fa-hdd me-1"></i> ${data.disk_space}</span>
+            `;
         });
+    }
 
+    function loadConfig() {
+        fetch('/api/config').then(r => r.json()).then(config => {
+            document.getElementById('src_dir').value = config.src_dir;
+            document.getElementById('dest_root').value = config.dest_root;
+            if (config.dest_root && config.dest_root.includes('@') && config.dest_root.includes(':')) {
+                document.getElementById('is_remote_dest').checked = true;
+                toggleRemoteDest();
+                const pts = config.dest_root.match(/([^@]+)@([^:]+):(.+)/);
+                if (pts) {
+                    document.getElementById('ssh_user').value = pts[1];
+                    document.getElementById('ssh_host').value = pts[2];
+                    document.getElementById('ssh_path').value = pts[3];
+                }
+            }
+            for (const [f, v] of Object.entries(config.flags)) {
+                const el = document.querySelector(`[name="${f}"]`);
+                if (el) el.checked = v;
+            }
+        });
+    }
+
+    function saveSettings() {
+        const formData = new FormData(configForm);
+        const config = {
+            src_dir: formData.get('src_dir'),
+            dest_root: formData.get('dest_root'),
+            flags: {
+                skip_bids_validation: formData.get('skip_bids_validation') === 'on',
+                dry_run: formData.get('dry_run') === 'on',
+                backup: formData.get('backup') === 'on',
+                parallel_hash: formData.get('parallel_hash') === 'on',
+                force_empty: formData.get('force_empty') === 'on',
+                fasttrack: formData.get('fasttrack') === 'on',
+                update: formData.get('update') === 'on',
+                no_gzheader_check: formData.get('no_gzheader_check') === 'on',
+            }
+        };
+        fetch('/api/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        }).then(() => alert('Settings saved successfully.'));
+    }
+
+    socket.on('terminal_output', (msg) => {
+        terminal.innerText += msg.data;
+        terminal.scrollTop = terminal.scrollHeight;
+    });
+
+    socket.on('process_finished', (msg) => {
+        terminal.innerText += `\n[FINISH] Process exited with status code ${msg.exit_code}.\n`;
+        terminal.scrollTop = terminal.scrollHeight;
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
         updatePreflight();
         loadConfig();
-    </script>
-</body>
-</html>
+    });
+</script>
+{% endblock %}

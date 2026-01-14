@@ -1,10 +1,34 @@
 #!/usr/bin/env python3
 import os
+import sys
+
+def check_venv():
+    """Ensure the script runs within the local .venv virtual environment."""
+    # Check if already in a virtual environment
+    is_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if is_venv:
+        return
+
+    # Check for .venv in the current directory
+    venv_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.venv')
+    python_exe = 'Scripts/python.exe' if os.name == 'nt' else 'bin/python'
+    venv_python = os.path.join(venv_dir, python_exe)
+
+    if os.path.exists(venv_python):
+        print(f"🔄 Activating virtual environment: {venv_dir}")
+        os.execv(venv_python, [venv_python] + sys.argv)
+    else:
+        print(f"⚠️ Warning: .venv not found at {venv_dir}. Running with system python.")
+
+# Boot the venv before importing third-party modules
+check_venv()
+
 import subprocess
 import json
 import threading
 import psutil
 import socket
+import webbrowser
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 from waitress import serve
@@ -146,6 +170,13 @@ def preflight():
 
     return jsonify(checks)
 
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    """Shutdown the Flask server when requested by the frontend."""
+    print("Shutdown requested...")
+    os._exit(0)
+    return jsonify(success=True)
+
 active_process = None
 
 @socketio.on('start_process')
@@ -205,7 +236,13 @@ if __name__ == '__main__':
             break
     
     if target_port:
-        print(f"🚀 BIDS2DataLad Web Interface: http://localhost:{target_port}")
+        url = f"http://localhost:{target_port}"
+        print(f"🚀 BIDS2DataLad Web Interface: {url}")
+        # Open browser in a separate thread
+        def open_browser():
+            threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+        open_browser()
+        
         # Using waitress for production-ready serving as requested
         # Note: WebSockets will fall back to long-polling via threading mode
         serve(app, host='0.0.0.0', port=target_port, _quiet=True)
